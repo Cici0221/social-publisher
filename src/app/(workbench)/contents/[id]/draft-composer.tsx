@@ -88,6 +88,7 @@ export default function DraftComposer({ initial, accounts, assets, presets }: Re
           : dirty ? <><CloudUpload size={17} aria-hidden="true" /><span>{saving ? "正在保存" : "等待保存"}</span></>
             : <><CloudCheck size={17} aria-hidden="true" /><span>{saved.generation ? "已自动保存" : "草稿已保存"}</span></>}
       </div>
+      {!dirty && !failure && draft.selections.length > 0 && <a className="button button-primary" href={`/contents/${initial.id}/publish`}>核对发布清单</a>}
     </header>
     {initial.status === "RETURNED" && <div className={styles.notice}>
       <strong>审核退回</strong><span>{initial.reviewNote || "请修改后重新提交。"}</span>

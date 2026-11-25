@@ -60,6 +60,24 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     init: true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 4s
+      timeout: 3s
+      retries: 30
+
+  worker:
+    image: social-publisher-local
+    pull_policy: never
+    depends_on:
+      web:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment: *app_environ
+    command: ["npm", "run", "worker"]
+    restart: unless-stopped
+    init: true
 
 volumes:
   postgres:

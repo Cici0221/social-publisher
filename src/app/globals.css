@@ -346,3 +346,33 @@ textarea { resize: vertical; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; }
 }
+
+.delivery-stack { display: grid; gap: 12px; margin: 16px 0; }
+.delivery-panel { padding: 20px 22px; background: var(--paper); border: 1px solid var(--line); border-radius: 13px; min-width: 0; }
+.delivery-panel-heading, .delivery-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.delivery-panel h2 { font-size: 1.05rem; overflow-wrap: anywhere; margin-bottom: 3px; }
+.delivery-panel-heading .muted { font-size: 0.84rem; }
+.delivery-badge { padding: 4px 9px; border-radius: 6px; background: #ebeee6; color: #435744; font-size: 0.79rem; font-weight: 700; white-space: nowrap; }
+.delivery-badge.good { color: #176044; background: #dcefe3; }
+.delivery-badge.danger { color: #9a3b2c; background: #f8e4de; }
+.delivery-copy { margin-top: 13px; padding: 13px; background: #f3f5ef; border-radius: 8px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.delivery-copy small { display: inline-block; margin-top: 6px; color: var(--muted); }
+.delivery-errors, .delivery-notes { margin: 10px 0; padding: 8px 13px; border-radius: 6px; font-size: 0.89rem; }
+ul.delivery-errors, ul.delivery-notes { padding-left: 32px; }
+.delivery-errors { background: #f8e8e1; color: #873629; }
+.delivery-notes { background: #fbf0d9; color: #624719; }
+.delivery-options { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 13px; margin: 13px 0; }
+.delivery-options .form-field { flex: 0 1 220px; }
+.delivery-options select, .delivery-options input:not([type="checkbox"]) { min-height: 40px; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+.tick-field { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 0.9rem; }
+.tick-field input { accent-color: var(--accent); }
+.delivery-footer { border-top: 1px solid var(--line); padding: 16px 0; }
+.delivery-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.delivery-summary { margin: 12px 0; padding: 10px 15px; color: var(--accent); border-left: 3px solid currentColor; background: var(--accent-light); }
+.delivery-empty { padding: 45px 20px; text-align: center; border: 1px dashed var(--line); border-radius: 13px; color: var(--muted); }
+.delivery-panel > .button { margin-top: 12px; }
+.account-bind { margin-bottom: 20px; }
+@media (max-width: 620px) {
+  .delivery-footer { align-items: flex-start; flex-direction: column; }
+  .delivery-panel { padding: 14px; }
+}

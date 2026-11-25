@@ -1,6 +1,6 @@
 "use client";
 
-import { FilePenLine, Images, LayoutDashboard, UsersRound } from "lucide-react";
+import { FilePenLine, Images, Cable, LayoutDashboard, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Role } from "@/generated/prisma/enums";
@@ -9,6 +9,7 @@ const navigation = [
   { href: "/", label: "工作台", icon: LayoutDashboard, allowed: ["ADMIN", "EDITOR", "REVIEWER"] },
   { href: "/contents", label: "内容草稿", icon: FilePenLine, allowed: ["ADMIN", "EDITOR"] },
   { href: "/assets", label: "素材库", icon: Images, allowed: ["ADMIN", "EDITOR", "REVIEWER"] },
+  { href: "/admin/accounts", label: "平台账号", icon: Cable, allowed: ["ADMIN"] },
   { href: "/admin/members", label: "成员管理", icon: UsersRound, allowed: ["ADMIN"] },
 ];
 
