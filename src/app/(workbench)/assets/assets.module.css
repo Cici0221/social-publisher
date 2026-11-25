@@ -1,0 +1,106 @@
+.dropzone {
+  min-height: 126px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 19px;
+  padding: 18px clamp(19px, 3vw, 28px);
+  color: var(--accent-ink);
+  background: linear-gradient(112deg, #e5eddc, #eff2e5 62%, #e1ecdb);
+  border: 1px dashed #91a890;
+  border-radius: var(--radius);
+  transition: border-color 150ms, background 150ms;
+}
+.dragging { border-color: var(--accent); background: #d9ebd6; }
+.uploadIcon {
+  width: 49px;
+  height: 49px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #d4e4ce;
+}
+.uploadCopy h2 { font: 760 1.24rem/1.3 var(--font-editorial); margin-bottom: 5px; }
+.uploadCopy p { color: #486556; font-size: 0.78rem; }
+.catalog { margin-top: 23px; overflow: hidden; }
+.filters {
+  display: grid;
+  grid-template-columns: minmax(140px, 2fr) repeat(3, minmax(100px, 1fr)) repeat(2, minmax(132px, 1fr));
+  gap: 10px 12px;
+  padding: 17px 18px 12px;
+  background: #fafbf4;
+  border-bottom: 1px solid #e7ebe1;
+}
+.filters :global(.field) { min-width: 0; gap: 5px; }
+.filters :global(.field) > span { color: #3b5045; font-size: 0.77rem; }
+.filters input, .filters select { min-height: 38px; font-size: 0.80rem; }
+.filterActions { display: flex; align-items: center; grid-column: 1 / -1; gap: 12px; }
+.filterActions button { min-height: 36px; font-size: 0.80rem; }
+.inlineAction {
+  border: 0;
+  color: var(--accent);
+  padding: 5px 0;
+  background: transparent;
+  font-weight: 680;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.catalogToolbar { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; padding: 14px 18px 9px; }
+.catalogToolbar h2, .transferPanel h2 { font-size: 0.98rem; font-weight: 760; }
+.catalogToolbar span { color: var(--muted); font-size: 0.77rem; }
+.tableWrap { overflow-x: auto; }
+.tableWrap table { border-collapse: collapse; width: 100%; min-width: 670px; text-align: left; table-layout: fixed; }
+.tableWrap thead { font-size: 0.74rem; color: var(--muted); }
+.tableWrap td, .tableWrap th { padding: 10px 9px; border-bottom: 1px solid #e9ede4; vertical-align: middle; }
+.tableWrap th:first-child, .tableWrap td:first-child { padding-left: 18px; width: 30%; }
+.tableWrap th:nth-child(2) { width: 15%; }
+.tableWrap th:nth-child(3) { width: 22%; }
+.tableWrap th:nth-child(4) { width: 16%; }
+.tableWrap th:nth-child(5) { width: 17%; }
+.tableWrap tbody tr:hover { background: #fafbf5; }
+.assetName { display: grid; grid-template-columns: 49px minmax(0, 1fr); align-items: center; gap: 9px; }
+.assetName strong { display: block; font-size: 0.83rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.assetName small, .meta small { display: block; color: var(--muted); font-size: 0.72rem; margin-top: 2px; }
+.assetName small:empty, .meta small:empty { display: none; }
+.thumb { width: 49px; height: 41px; border-radius: 5px; background: #e2ebdd; display: grid; place-items: center; color: #496853; overflow: hidden; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; }
+.meta { font-size: 0.80rem; min-width: 0; overflow-wrap: anywhere; }
+.tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.tags:empty { display: none; }
+.tags span { padding: 1px 5px; background: #edf1e7; color: #385746; border-radius: 3px; font-size: 0.67rem; overflow-wrap: anywhere; }
+.itemActions { display: flex; align-items: center; color: #3c5d4b; }
+.itemActions :global(.icon-button) { width: 29px; }
+.itemActions button:last-child:hover { color: var(--danger); }
+.pagination { min-height: 52px; display: flex; align-items: center; justify-content: flex-end; padding: 4px 16px; gap: 8px; font-size: 0.78rem; color: var(--muted); }
+.empty { min-height: 170px; display: grid; place-content: center; justify-items: center; gap: 7px; color: var(--muted); text-align: center; font-size: 0.86rem; }
+.error { margin: 10px 16px; display: flex; gap: 8px; align-items: center; padding: 9px 11px; background: var(--danger-light); color: var(--danger); border-radius: 6px; font-size: 0.82rem; }
+.transferPanel { margin-top: 10px; padding: 9px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.transferPanel header { display: flex; align-items: center; justify-content: space-between; gap: 13px; }
+.transfer { display: grid; grid-template-columns: minmax(70px, 1.2fr) minmax(46px, 2fr) auto 32px; gap: 12px; align-items: center; min-height: 32px; font-size: 0.76rem; }
+.transferName { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+.transferState { color: var(--muted); white-space: nowrap; }
+.transfer progress { display: block; width: 100%; min-width: 0; height: 4px; accent-color: var(--accent); }
+.transferError { color: var(--danger) !important; }
+.dialog { width: min(460px, calc(100vw - 34px)); margin: auto; padding: 0; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 18px 60px rgb(15 40 28 / 23%); }
+.dialog::backdrop { background-color: rgb(20 42 33 / 48%); }
+.dialogBody { display: grid; gap: 13px; padding: 18px; }
+.dialogBody header, .dialogBody footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dialogBody footer { justify-content: flex-end; }
+.dialogBody h2 { font: 760 1.33rem var(--font-editorial); }
+.dialogBody p { font-size: 0.88rem; }
+.dialogBody .error { margin: 0; }
+.dialogFilename { overflow-wrap: anywhere; color: var(--muted); }
+.references { list-style: none; margin: 0; padding: 0; max-height: 230px; overflow: auto; display: grid; gap: 4px; }
+.references li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 9px; background: #eff3e9; border-radius: 5px; font-size: 0.82rem; }
+.references li > span:last-child { white-space: nowrap; color: var(--muted); }
+.dangerButton { background: var(--danger); color: white; border-color: var(--danger); }
+.dangerButton:hover { background: #722b24; }
+@media (max-width: 1180px) {
+  .filters { grid-template-columns: repeat(3, minmax(88px, 1fr)); }
+}
+@media (max-width: 550px) {
+  .dropzone { grid-template-columns: auto minmax(0, 1fr); padding: 14px; gap: 10px; }
+  .dropzone button { grid-column: 1 / -1; justify-self: stretch; }
+  .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .transfer { grid-template-columns: minmax(70px, 1fr) minmax(28px, 1fr) auto 25px; gap: 6px; }
+}

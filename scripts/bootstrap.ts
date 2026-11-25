@@ -4,6 +4,7 @@ import { db } from "../src/server/db";
 import { encrypt, hashPassword } from "../src/server/crypto";
 import { audit } from "../src/server/audit";
 import { memberSchema } from "../src/server/team";
+import { bootstrapStorage } from "../src/server/assets/storage";
 
 const email = process.env.BOOTSTRAP_ADMIN_EMAIL;
 const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
@@ -23,9 +24,10 @@ try {
       await audit(tx, id, "member.bootstrap", id, { role: member.role });
     }, { isolationLevel: "Serializable" });
   }
+  await bootstrapStorage();
   console.info("工作台配置已初始化。");
 } catch {
-  console.error("初始配置失败，请核对数据库及 BOOTSTRAP_ADMIN 环境变量。");
+  console.error("初始配置失败，请核对数据库、对象存储及 BOOTSTRAP_ADMIN 环境变量。");
   process.exitCode = 1;
 } finally {
   await db().$disconnect();
