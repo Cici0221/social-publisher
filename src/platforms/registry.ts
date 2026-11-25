@@ -52,6 +52,6 @@ export function adapterFor(key: PlatformKey, mode: "MOCK" | "MANUAL" | "LIVE"): 
 }
 
 export function liveAvailability(key: PlatformKey) {
-  if (process.env.APP_MODE === "local") return { available: false, reason: "本地演示环境使用模拟账号。" };
+  if (process.env.APP_MODE !== "production") return { available: false, reason: "本地演示环境使用模拟账号。" };
   return adapterFor(key, "LIVE").availability();
 }

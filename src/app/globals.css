@@ -81,7 +81,7 @@ button:disabled { cursor: wait; opacity: 0.67; }
 .brand-name { font-weight: 750; font-size: 1.18rem; letter-spacing: 0.11em; line-height: 1.2; white-space: nowrap; }
 .brand-subtitle { color: var(--sidebar-muted); font-size: 0.68rem; letter-spacing: 0.1em; white-space: nowrap; }
 
-.workspace-navigation { display: flex; flex-direction: column; gap: 5px; overflow-y: auto; }
+.workspace-navigation { display: flex; flex-direction: column; gap: 5px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #588475 transparent; }
 .nav-link {
   display: flex;
   align-items: center;
@@ -356,6 +356,7 @@ textarea { resize: vertical; }
 .delivery-badge.good { color: #176044; background: #dcefe3; }
 .delivery-badge.danger { color: #9a3b2c; background: #f8e4de; }
 .delivery-copy { margin-top: 13px; padding: 13px; background: #f3f5ef; border-radius: 8px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.delivery-reference { margin-top: 8px; overflow-wrap: anywhere; }
 .delivery-copy small { display: inline-block; margin-top: 6px; color: var(--muted); }
 .delivery-errors, .delivery-notes { margin: 10px 0; padding: 8px 13px; border-radius: 6px; font-size: 0.89rem; }
 ul.delivery-errors, ul.delivery-notes { padding-left: 32px; }

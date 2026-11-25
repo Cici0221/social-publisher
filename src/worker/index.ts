@@ -1,11 +1,13 @@
 import "dotenv/config";
 import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
+import { validateRuntimeConfig } from "@/server/runtime-config";
 import { db } from "@/server/db";
 import { wakeAssetMaintenance } from "@/server/assets/service";
 import { dispatchableStatuses, runTask } from "./task";
 import { refreshExpiringAccounts } from "./refresh";
 
+validateRuntimeConfig();
 const redis = new URL(process.env.REDIS_URL ?? "redis://127.0.0.1:56379");
 if (!["redis:", "rediss:"].includes(redis.protocol)) throw new Error("REDIS_URL 通讯协议无效");
 const producer = new Redis(redis.href, { maxRetriesPerRequest: 1, enableOfflineQueue: false });

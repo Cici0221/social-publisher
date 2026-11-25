@@ -14,7 +14,7 @@ import { notify } from "./notices";
 const editable = ["DRAFT", "RETURNED"] as const;
 const tasksForView = {
   id: true, mode: true, platform: true, status: true, runAt: true, language: true,
-  postUrl: true, publishedAt: true, errorCode: true, errorMessage: true, retryCount: true,
+  postUrl: true, externalId: true, publishedAt: true, errorCode: true, errorMessage: true, retryCount: true,
   account: { select: { name: true, backendUrl: true } },
 } as const;
 

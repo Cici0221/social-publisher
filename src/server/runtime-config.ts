@@ -1,0 +1,21 @@
+const exampleKey = "Y29kZXgta2V5LWZvci1sb2NhbC10ZXN0LXByb2plY3Q=";
+
+export function validateRuntimeConfig(env: Readonly<Record<string, string | undefined>> = process.env) {
+  const mode = env.APP_MODE ?? "local";
+  if (mode !== "local" && mode !== "production") throw new Error("APP_MODE 必须是 local 或 production。");
+  const url = new URL(env.APP_URL ?? "http://localhost:3000");
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("APP_URL 必须使用 HTTP 或 HTTPS。");
+  if (mode === "local") return;
+
+  if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("生产环境的 APP_URL 必须是独立的 HTTPS 站点来源。");
+  }
+  const key = Buffer.from(env.ENCRYPTION_KEY ?? "", "base64");
+  if (key.length !== 32 || key.equals(Buffer.from(exampleKey, "base64"))) {
+    throw new Error("生产环境需要独立的 32 字节 Base64 加密密钥。");
+  }
+  if (env.BOOTSTRAP_ADMIN_PASSWORD === "local-publisher-only" ||
+      env.BOOTSTRAP_ADMIN_TOTP_SECRET === "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP") {
+    throw new Error("生产环境不能使用演示管理员配置。");
+  }
+}

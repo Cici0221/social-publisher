@@ -51,3 +51,50 @@ test("Bluesky creates an official record and reconciles that same record after l
   assert.equal(posted?.record.text, input);
   assert.deepEqual(await bluesky.queryStatus(context), sent);
 });
+
+test("Bluesky sends video once and reuses the processing checkpoint", async t => {
+  const context = fixture();
+  const bytes = new Uint8Array([1, 8, 3]);
+  context.media = [{
+    id: "fixture-video", filename: "preview.mp4", mime: "video/mp4", bytes: bytes.length,
+    kind: "VIDEO", width: 1080, height: 1920, duration: 5,
+    async read() { return Buffer.from(bytes); },
+    async stream() { return new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(bytes); controller.close(); } }); },
+    async url() { throw new Error("Bluesky uploads from a signed service session rather than pulling a media URL"); },
+  }];
+  let uploads = 0;
+  const blob = { $type: "blob", ref: { $link: "mock-blob-id" }, mimeType: "video/mp4", size: bytes.length };
+  t.mock.method(globalThis, "fetch", async (input: string, init: RequestInit) => {
+    const url = new URL(input);
+    const headers = new Headers(init.headers);
+    if (url.pathname.endsWith("getServiceAuth")) {
+      assert.equal(url.hostname, "bsky.social");
+      assert.equal(url.searchParams.get("aud"), "did:web:bsky.social");
+      assert.equal(url.searchParams.get("lxm"), "com.atproto.repo.uploadBlob");
+      return Response.json({ token: "media-service-fixture" });
+    }
+    if (url.pathname.endsWith("uploadVideo")) {
+      uploads++;
+      assert.equal(url.hostname, "video.bsky.app");
+      assert.equal(url.searchParams.get("did"), context.credentials.externalId);
+      assert.equal(headers.get("Authorization"), "Bearer media-service-fixture");
+      assert.deepEqual(new Uint8Array(await new Response(init.body).arrayBuffer()), bytes);
+      return Response.json({ jobId: "fixture-job", state: "JOB_STATE_ENCODING" });
+    }
+    if (url.pathname.endsWith("getJobStatus")) {
+      assert.equal(url.searchParams.get("jobId"), "fixture-job");
+      return Response.json({ jobStatus: { jobId: "fixture-job", state: "JOB_STATE_COMPLETED", blob } });
+    }
+    if (url.pathname.endsWith("createRecord")) {
+      const request = JSON.parse(String(init.body));
+      assert.deepEqual(request.record.embed, { $type: "app.bsky.embed.video", video: blob, alt: "", aspectRatio: { width: 1080, height: 1920 } });
+      return Response.json({ uri: "at://did:plc:official/app.bsky.feed.post/" + request.rkey });
+    }
+    throw new Error("unexpected API call");
+  });
+  assert.equal((await bluesky.uploadMedia(context)).kind, "pending");
+  assert.equal((await bluesky.uploadMedia(context)).kind, "ready");
+  assert.equal((await bluesky.uploadMedia(context)).kind, "ready");
+  assert.equal((await bluesky.publish(context)).kind, "success");
+  assert.equal(uploads, 1);
+});

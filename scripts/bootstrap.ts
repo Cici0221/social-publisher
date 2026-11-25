@@ -4,12 +4,14 @@ import { db } from "../src/server/db";
 import { encrypt, hashPassword } from "../src/server/crypto";
 import { audit } from "../src/server/audit";
 import { memberSchema } from "../src/server/team";
+import { validateRuntimeConfig } from "../src/server/runtime-config";
 import { bootstrapStorage } from "../src/server/assets/storage";
 
 const email = process.env.BOOTSTRAP_ADMIN_EMAIL;
 const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
 const secret = process.env.BOOTSTRAP_ADMIN_TOTP_SECRET;
 try {
+  validateRuntimeConfig();
   await db().preference.upsert({ where: { id: "workspace" }, create: {}, update: {} });
   if (email || password || secret) {
     const member = memberSchema.parse({ email, password, name: "系统管理员", role: "ADMIN" });

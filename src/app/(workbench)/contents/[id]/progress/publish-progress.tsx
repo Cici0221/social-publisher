@@ -128,6 +128,8 @@ export function PublishProgress({ initial }: { initial: Progress }) {
           {progress.canManage && ["SCHEDULED", "WAITING_APPROVAL", "QUEUED"].includes(row.status) &&
             <ScheduleActions row={row} zone={zone} refresh={refresh} />}
           {row.errorMessage && <p className={row.status === "SUCCESS" ? "delivery-notes" : "delivery-errors"}>{row.errorMessage}</p>}
+          {!link && row.mode === "LIVE" && row.externalId &&
+            <p className="muted delivery-reference">平台回执编号 <code>{row.externalId}</code></p>}
           {link && <a className="button button-outline button-compact" href={link} target="_blank" rel="noreferrer">查看已发布帖子</a>}
           {row.status === "MANUAL" && <ManualDelivery taskId={row.id} />}
           {progress.canManage && row.status === "FAILED" && <button type="button" className="button button-outline button-compact" onClick={() => void retry(row.id)}

@@ -42,7 +42,7 @@ function notFound(error: unknown) {
 export async function bootstrapStorage() {
   const client = internal();
   const bucket = { Bucket: storageBucket() };
-  // Compose can start the app before MinIO has bound its API listener.
+  // Compose can start the app before the S3 gateway has bound its listener.
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
       await client.send(new HeadBucketCommand(bucket));
