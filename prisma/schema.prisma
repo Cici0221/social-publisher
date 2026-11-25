@@ -1,0 +1,316 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  EDITOR
+  REVIEWER
+}
+
+enum Language {
+  ZH
+  EN
+  JA
+  VI
+}
+
+enum AccountMode {
+  LIVE
+  MOCK
+  MANUAL
+}
+
+enum AccountStatus {
+  ACTIVE
+  REAUTH_REQUIRED
+  DISABLED
+}
+
+enum AssetKind {
+  IMAGE
+  VIDEO
+}
+
+enum AssetStatus {
+  PROCESSING
+  READY
+  FAILED
+  DELETED
+}
+
+enum ContentStatus {
+  DRAFT
+  IN_REVIEW
+  RETURNED
+  SUBMITTED
+}
+
+enum TaskStatus {
+  WAITING_APPROVAL
+  SCHEDULED
+  QUEUED
+  UPLOADING
+  PUBLISHING
+  PROCESSING
+  MANUAL
+  SUCCESS
+  FAILED
+  UNKNOWN
+  CANCELLED
+}
+
+model User {
+  id           String           @id @default(uuid())
+  email        String           @unique
+  name         String
+  role         Role
+  passwordHash String
+  totpSecret   String
+  lastTotpStep BigInt?
+  active       Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  sessions     Session[]
+  contents     Content[]
+  assets       Asset[]
+  uploads      UploadSession[]
+  presets      PlatformPreset[]
+  notices      Notification[]
+  reviews      Review[]
+  audit        AuditLog[]
+  oauthStates  OAuthState[]
+  published    PublishTask[]    @relation("Publisher")
+  confirmed    PublishTask[]    @relation("Confirmer")
+}
+
+model Session {
+  digest    String   @id
+  userId    String
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model LoginLimit {
+  key       String   @id
+  count     Int
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+model Preference {
+  id             String  @id @default("workspace")
+  reviewRequired Boolean @default(false)
+}
+
+model PlatformAccount {
+  id           String        @id @default(uuid())
+  platform     String
+  externalId   String
+  name         String
+  mode         AccountMode
+  status       AccountStatus @default(ACTIVE)
+  language     Language      @default(ZH)
+  backendUrl   String?
+  credential   String?
+  expiresAt    DateTime?
+  refreshAfter DateTime?
+  refreshLease DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  tasks        PublishTask[]
+
+  @@unique([platform, externalId, mode])
+  @@index([status, refreshAfter])
+}
+
+model OAuthState {
+  digest    String   @id
+  platform  String
+  userId    String
+  verifier  String?
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+}
+
+model AssetFolder {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  assets    Asset[]
+}
+
+model Asset {
+  id         String         @id @default(uuid())
+  objectKey  String         @unique
+  thumbKey   String?
+  filename   String
+  mime       String
+  bytes      BigInt
+  kind       AssetKind
+  status     AssetStatus    @default(PROCESSING)
+  width      Int?
+  height     Int?
+  duration   Float?
+  error      String?
+  uploaderId String
+  folderId   String?
+  tags       String[]       @default([])
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  uploader   User           @relation(fields: [uploaderId], references: [id])
+  folder     AssetFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  references ContentAsset[]
+
+  @@index([status, createdAt])
+  @@index([folderId])
+  @@index([uploaderId])
+}
+
+model UploadSession {
+  id          String    @id @default(uuid())
+  objectKey   String    @unique
+  multipartId String
+  filename    String
+  mime        String
+  kind        AssetKind
+  bytes       BigInt
+  ownerId     String
+  expiresAt   DateTime
+  complete    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  owner       User      @relation(fields: [ownerId], references: [id])
+
+  @@index([ownerId, complete])
+  @@index([expiresAt])
+}
+
+model Content {
+  id          String         @id @default(uuid())
+  ownerId     String
+  status      ContentStatus  @default(DRAFT)
+  revision    Int            @default(0)
+  versions    Json
+  overrides   Json
+  selections  Json
+  reviewNote  String?
+  submittedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  owner       User           @relation(fields: [ownerId], references: [id])
+  assets      ContentAsset[]
+  tasks       PublishTask[]
+  reviews     Review[]
+
+  @@index([ownerId, status, updatedAt])
+}
+
+model ContentAsset {
+  contentId String
+  assetId   String
+  content   Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  asset     Asset   @relation(fields: [assetId], references: [id])
+
+  @@id([contentId, assetId])
+  @@index([assetId])
+}
+
+model PlatformPreset {
+  id         String   @id @default(uuid())
+  ownerId    String
+  name       String
+  accountIds String[]
+  createdAt  DateTime @default(now())
+  owner      User     @relation(fields: [ownerId], references: [id])
+
+  @@unique([ownerId, name])
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  contentId  String
+  reviewerId String
+  approved   Boolean
+  note       String
+  createdAt  DateTime @default(now())
+  content    Content  @relation(fields: [contentId], references: [id])
+  reviewer   User     @relation(fields: [reviewerId], references: [id])
+
+  @@index([contentId, createdAt])
+}
+
+model PublishTask {
+  id             String          @id @default(uuid())
+  contentId      String
+  accountId      String
+  publisherId    String
+  confirmerId    String?
+  mode           AccountMode
+  platform       String
+  language       Language
+  payload        Json
+  status         TaskStatus
+  runAt          DateTime
+  nextRunAt      DateTime?
+  attempt        Int             @default(0)
+  retryCount     Int             @default(0)
+  leaseToken     String?
+  leaseExpiresAt DateTime?
+  providerState  String?
+  externalId     String?
+  postUrl        String?
+  publishedAt    DateTime?
+  errorCode      String?
+  errorMessage   String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  content        Content         @relation(fields: [contentId], references: [id])
+  account        PlatformAccount @relation(fields: [accountId], references: [id])
+  publisher      User            @relation("Publisher", fields: [publisherId], references: [id])
+  confirmer      User?           @relation("Confirmer", fields: [confirmerId], references: [id])
+
+  @@unique([contentId, accountId])
+  @@index([status, nextRunAt])
+  @@index([status, runAt])
+  @@index([publisherId, createdAt])
+  @@index([platform, createdAt])
+}
+
+model AuditLog {
+  id        BigInt   @id @default(autoincrement())
+  actorId   String?
+  action    String
+  objectId  String?
+  details   Json
+  createdAt DateTime @default(now())
+  actor     User?    @relation(fields: [actorId], references: [id])
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  kind      String
+  message   String
+  href      String?
+  dedupeKey String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, createdAt])
+}
