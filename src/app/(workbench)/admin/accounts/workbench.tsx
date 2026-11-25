@@ -17,6 +17,7 @@ export function AccountWorkbench({ initial, providers, demo }: { initial: Accoun
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [confirm, setConfirm] = useState("");
+  const manual = platformRules[selected].mode === "manual";
   const capability = providers.find(provider => provider.key === selected);
 
   async function submit(path: string, data: object, method = "POST") {
@@ -35,27 +36,32 @@ export function AccountWorkbench({ initial, providers, demo }: { initial: Accoun
   function bind(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    if (demo) void submit("/api/accounts", { action: "MOCK", platform: selected, name: form.get("name"), language: form.get("language") });
+    if (manual) void submit("/api/accounts", { action: "MANUAL", platform: selected, name: form.get("name"), language: form.get("language"),
+      backendUrl: form.get("backendUrl") || undefined });
+    else if (demo) void submit("/api/accounts", { action: "MOCK", platform: selected, name: form.get("name"), language: form.get("language") });
     else void submit("/api/accounts", { action: "AUTHORIZE", platform: selected });
   }
 
   return <>
     <form className="delivery-panel account-bind" onSubmit={bind}>
-      <div><h2>{demo ? "添加模拟账号" : "绑定官方账号"}</h2>
-        <p className="muted">{demo ? "演示任务不会向真实平台发送。" : "选择平台后，按官方流程授权。Bluesky 使用环境中配置的应用专用密码。"}</p></div>
+      <div><h2>{manual ? "登记半自动账号" : demo ? "添加模拟账号" : "绑定官方账号"}</h2>
+        <p className="muted">{manual ? "填写账号名称，编辑会在平台官方后台完成人工发布。" : demo ? "演示任务不会向真实平台发送。" : "选择平台后，按官方流程授权。Bluesky 使用环境中配置的应用专用密码。"}</p></div>
       <div className="delivery-options">
         <label className="form-field"><span>平台</span><select value={selected} onChange={event => setSelected(event.target.value as PlatformKey)}>
           {providers.map(entry => <option key={entry.key} value={entry.key}>{platformRules[entry.key].label}</option>)}
         </select></label>
-        {demo && <>
+        {(demo || manual) && <>
           <label className="form-field"><span>账号名称</span><input name="name" required maxLength={80} placeholder="例如：宣传部演示账号" /></label>
           <label className="form-field"><span>默认语言</span><select name="language" defaultValue="ZH">
             {languageChoices.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
           </select></label>
         </>}
+        {manual && <label className="form-field"><span>官方后台地址</span>
+          <input key={selected} name="backendUrl" type="url" defaultValue={platformRules[selected].backend} />
+        </label>}
       </div>
-      {!demo && !capability?.available && <p className="delivery-errors">{capability?.reason ?? "官方接入不可用。"}</p>}
-      <button className="button button-primary" disabled={busy || (!demo && !capability?.available)}> {demo ? "新增模拟账号" : "前往授权"} </button>
+      {!demo && !manual && !capability?.available && <p className="delivery-errors">{capability?.reason ?? "官方接入不可用。"}</p>}
+      <button className="button button-primary" disabled={busy || (!demo && !manual && !capability?.available)}> {manual ? "登记账号" : demo ? "新增模拟账号" : "前往授权"} </button>
     </form>
     <div className="delivery-stack">
       {initial.map(row => <article className="delivery-panel" key={row.id}>

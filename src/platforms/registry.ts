@@ -1,4 +1,6 @@
 import { platformRules, type PlatformKey } from "@/lib/platforms";
+import { xiaohongshu } from "./providers/xiaohongshu";
+import { wechat } from "./providers/wechat";
 import { bluesky } from "./providers/bluesky";
 import { youtube } from "./providers/youtube";
 import { facebook } from "./providers/facebook";
@@ -13,9 +15,10 @@ import { kuaishouAdapter as kuaishou } from "./providers/kuaishou";
 import { bilibiliAdapter as bilibili } from "./providers/bilibili";
 import { ProviderError, type PlatformAdapter, type Credentials } from "./types";
 
+const manual: Partial<Record<PlatformKey, PlatformAdapter>> = { xiaohongshu, wechat };
 const live: Partial<Record<PlatformKey, PlatformAdapter>> = { youtube, facebook, instagram, threads, linkedin, bluesky, x, tiktok, douyin, weibo, kuaishou, bilibili };
 
-function simulated(key: PlatformKey, manual = false): PlatformAdapter {
+function simulated(key: PlatformKey): PlatformAdapter {
   return {
     key,
     availability: () => ({ available: true }),
@@ -23,14 +26,12 @@ function simulated(key: PlatformKey, manual = false): PlatformAdapter {
     verify: async () => {},
     uploadMedia: async () => ({ kind: "ready" }),
     publish: async context => {
-      if (manual) return { kind: "manual" };
       if (process.env.APP_MODE === "local" && process.env.MOCK_FAIL_PLATFORM === key) {
         throw new ProviderError("mock_rejected", "模拟平台拒绝了此任务。", { definite: true });
       }
       return { kind: "success", externalId: "mock-" + context.taskId };
     },
-    queryStatus: async context => manual ? { kind: "manual" } :
-      { kind: "success", externalId: context.externalId ?? "mock-" + context.taskId },
+    queryStatus: async context => ({ kind: "success", externalId: context.externalId ?? "mock-" + context.taskId }),
   };
 }
 
@@ -46,7 +47,7 @@ function unavailable(key: PlatformKey): PlatformAdapter {
 
 export function adapterFor(key: PlatformKey, mode: "MOCK" | "MANUAL" | "LIVE"): PlatformAdapter {
   if (mode === "MOCK") return simulated(key);
-  if (mode === "MANUAL") return simulated(key, true);
+  if (mode === "MANUAL") return manual[key] ?? unavailable(key);
   return live[key] ?? unavailable(key);
 }
 

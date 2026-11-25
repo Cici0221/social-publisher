@@ -7,7 +7,7 @@ import { AccountWorkbench } from "./workbench";
 export default async function AccountsPage({ searchParams }: { searchParams: Promise<{ result?: string }> }) {
   await pageActor("ADMIN");
   const [accounts, { result }] = await Promise.all([accountList(), searchParams]);
-  const providers = platformKeys.filter(key => platformRules[key].mode === "direct").map(key => ({
+  const providers = platformKeys.map(key => ({
     key, ...liveAvailability(key),
   }));
   return <div className="page-container">

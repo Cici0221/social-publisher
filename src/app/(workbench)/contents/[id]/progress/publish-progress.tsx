@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { isPlatform, languageLabels, platformRules } from "@/lib/platforms";
 import type { TaskStatus } from "@/generated/prisma/enums";
+import { ManualDelivery } from "@/ui/manual-delivery";
 import type { publicationProgress } from "@/server/publications";
 
 type Progress = Awaited<ReturnType<typeof publicationProgress>>;
@@ -70,6 +71,7 @@ export function PublishProgress({ initial }: { initial: Progress }) {
           </header>
           {row.errorMessage && <p className="delivery-errors">{row.errorMessage}</p>}
           {link && <a className="button button-outline button-compact" href={link} target="_blank" rel="noreferrer">查看已发布帖子</a>}
+          {row.status === "MANUAL" && <ManualDelivery taskId={row.id} />}
           {row.status === "FAILED" && <button type="button" className="button button-outline button-compact" onClick={() => void retry(row.id)}
             disabled={working === row.id}>重试此账号</button>}
         </article>;
