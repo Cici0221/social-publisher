@@ -2,9 +2,10 @@ import { isDeepStrictEqual } from "node:util";
 import type { z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
+import { liveAvailability } from "@/platforms/registry";
 import { AppError } from "@/server/errors";
 import { draftAssetReferences, draftSchema, emptyDraft, type DraftUpdate, type presetInputSchema } from "@/lib/draft-schema";
-import { platformKeys, type PlatformKey } from "@/lib/platforms";
+import { isPlatform, platformKeys, type PlatformKey } from "@/lib/platforms";
 
 const draftFields = {
   id: true, revision: true, status: true, updatedAt: true, reviewNote: true,
@@ -91,7 +92,7 @@ export async function draftEditorResources(ownerId: string) {
     }),
     db().asset.findMany({
       where: { status: "READY" },
-      select: { id: true, filename: true, kind: true, thumbKey: true },
+      select: { id: true, filename: true, kind: true, thumbKey: true, mime: true, bytes: true, width: true, height: true, duration: true, status: true },
       orderBy: { createdAt: "desc" },
     }),
     listPresets(ownerId),
@@ -99,11 +100,14 @@ export async function draftEditorResources(ownerId: string) {
   ]);
   const now = Date.now();
   return {
-    accounts: accounts.map(({ expiresAt, platform, ...account }) => ({
-      ...account, platform: platform as PlatformKey, expiresAt: expiresAt?.toISOString() ?? null,
-      available: account.status === "ACTIVE" && (!expiresAt || +expiresAt > now),
-    })),
-    assets: assets.map(({ thumbKey, ...asset }) => ({ ...asset, hasThumbnail: Boolean(thumbKey) })),
+    accounts: accounts.map(({ expiresAt, platform, ...account }) => {
+      const capability = account.mode === "LIVE" && isPlatform(platform) ? liveAvailability(platform) : { available: true };
+      return { ...account, platform: platform as PlatformKey, expiresAt: expiresAt?.toISOString() ?? null,
+        available: capability.available && account.status === "ACTIVE" && (!expiresAt || +expiresAt > now),
+        availabilityReason: capability.available ? null : capability.reason ?? "平台能力不可用。",
+      };
+    }),
+    assets: assets.map(({ thumbKey, bytes, ...asset }) => ({ ...asset, bytes: Number(bytes), hasThumbnail: Boolean(thumbKey) })),
     presets,
     reviewRequired: preference?.reviewRequired ?? false,
   };
@@ -116,11 +120,11 @@ export function listPresets(ownerId: string) {
 }
 
 export async function savePreset(ownerId: string, { name, accountIds }: z.infer<typeof presetInputSchema>) {
-  const valid = await db().platformAccount.count({ where: {
+  const valid = await db().platformAccount.findMany({ select: { platform: true, mode: true }, where: {
     id: { in: accountIds }, platform: { in: [...platformKeys] }, status: "ACTIVE",
     OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
   } });
-  if (valid !== accountIds.length) throw new AppError("部分账号当前不可用，请重新勾选。", 422);
+  if (valid.length !== accountIds.length || valid.some(row => row.mode === "LIVE" && isPlatform(row.platform) && !liveAvailability(row.platform).available)) throw new AppError("部分账号当前不可用，请重新勾选。", 422);
   return db().platformPreset.upsert({
     where: { ownerId_name: { ownerId, name } },
     create: { ownerId, name, accountIds }, update: { accountIds },

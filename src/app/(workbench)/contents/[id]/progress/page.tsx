@@ -11,7 +11,7 @@ export default async function ProgressPage({ params }: { params: Promise<{ id: s
     const initial = await publicationProgress(actor, (await params).id);
     return <div className="page-container">
       <header className="page-header"><div><p className="page-label">工作台 / 发布进度</p><h1>发布进度</h1>
-        <p className="muted">{initial.title}</p></div><Link className="button button-outline" href="/contents">返回草稿箱</Link>
+        <p className="muted">{initial.title}</p></div><Link className="button button-outline" href="/history">查看发布记录</Link>
       </header>
       <PublishProgress initial={initial} />
     </div>;

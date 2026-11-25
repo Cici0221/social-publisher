@@ -59,7 +59,7 @@ export type AdapterContext = {
 
 export type PendingOutcome = { kind: "pending"; externalId?: string; pollInMs?: number };
 export type UploadOutcome = { kind: "ready" } | PendingOutcome;
-export type SuccessOutcome = { kind: "success"; externalId: string; url?: string };
+export type SuccessOutcome = { kind: "success"; externalId: string; url?: string; warning?: string };
 export type PublishOutcome = SuccessOutcome | PendingOutcome | { kind: "manual" };
 export type StatusOutcome = PublishOutcome | { kind: "unknown" } | { kind: "safe-to-resume" };
 

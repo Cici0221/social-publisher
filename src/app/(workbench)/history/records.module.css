@@ -1,0 +1,19 @@
+.filters { display: grid; gap: 12px; padding: 16px; }
+.filterFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: 11px; }
+.results { margin-top: 14px; overflow: hidden; }
+.recordsTable { min-width: 850px; }
+.recordsTable td, .recordsTable th { vertical-align: top; }
+.stack, .recordSummary { display: grid; justify-items: start; gap: 4px; }
+.recordSummary a { font-size: 0.92rem; overflow-wrap: anywhere; max-width: 270px; }
+.expander { margin-top: 5px; max-width: 280px; }
+.expander summary { cursor: pointer; color: var(--muted); font-size: 0.78rem; }
+.copyTitle { display: block; margin-top: 7px; font-size: 0.85rem; overflow-wrap: anywhere; }
+.copyBody { margin: 5px 0; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 0.82rem/1.45 var(--font-body); }
+.recordError { color: var(--danger); font-size: 0.75rem; max-width: 190px; overflow-wrap: anywhere; }
+.empty { padding: 24px 18px; color: var(--muted); }
+.pagination { display: flex; justify-content: flex-end; align-items: center; gap: 9px; margin-top: 13px; }
+@media (max-width: 700px) {
+  .filters { padding: 13px; }
+  .filterFields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .recordsTable td, .recordsTable th { padding-inline: 11px; }
+}

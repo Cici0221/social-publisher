@@ -2,6 +2,7 @@ import { ArrowDownRight, ArrowRight, Radio, ShieldCheck, UsersRound } from "luci
 import Link from "next/link";
 import { pageActor } from "@/server/auth";
 import { db } from "@/server/db";
+import NewDraft from "./contents/new-draft";
 import { roleLabels } from "@/ui/identity";
 
 const purpose = {
@@ -13,10 +14,12 @@ const purpose = {
 export default async function WorkbenchPage() {
   const actor = await pageActor();
   const isAdmin = actor.role === "ADMIN";
-  const [preference, accounts, members] = await Promise.all([
+  const [preference, accounts, members, unread, pending] = await Promise.all([
     db().preference.findUnique({ where: { id: "workspace" }, select: { reviewRequired: true } }),
-    db().platformAccount.count({ where: { status: "ACTIVE" } }),
+    db().platformAccount.count({ where: { status: "ACTIVE", OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } }),
     isAdmin ? db().user.count({ where: { active: true } }) : Promise.resolve(null),
+    db().notification.count({ where: { userId: actor.id, readAt: null } }),
+    actor.role === "REVIEWER" ? db().content.count({ where: { status: "IN_REVIEW" } }) : Promise.resolve(null),
   ]);
   const requiresReview = preference?.reviewRequired ?? false;
   const date = new Intl.DateTimeFormat("zh-CN", {
@@ -27,7 +30,10 @@ export default async function WorkbenchPage() {
     <div className="page-container">
       <header className="page-header">
         <div><p className="page-label">{date} · 北京时间</p><h1>工作台</h1></div>
-        <span className="identity-label">{roleLabels[actor.role]}</span>
+        <div className="delivery-actions">
+          <span className="identity-label">{roleLabels[actor.role]}</span>
+          {actor.role === "REVIEWER" ? <Link className="button button-primary" href="/review">查看待审核</Link> : <NewDraft />}
+        </div>
       </header>
 
       <section className="workspace-intro" aria-labelledby="welcome-title">
@@ -49,7 +55,16 @@ export default async function WorkbenchPage() {
           <div className="summary-card">
             <dt><ShieldCheck size={18} aria-hidden="true" /> 发布审核</dt>
             <dd className="summary-word">{requiresReview ? "已开启" : "已关闭"}</dd>
+            {isAdmin && <Link className="text-link" href="/admin/review-settings">管理审核</Link>}
           </div>
+          <div className="summary-card">
+            <dt>未读通知</dt><dd>{unread}<span> 条</span></dd>
+            <Link className="text-link" href="/notifications">打开收件箱</Link>
+          </div>
+          {pending !== null && <div className="summary-card">
+            <dt>待审核内容</dt><dd>{pending}<span> 条</span></dd>
+            <Link className="text-link" href="/review">进入审核</Link>
+          </div>}
           {members !== null && (
             <div className="summary-card">
               <dt><UsersRound size={18} aria-hidden="true" /> 启用的成员</dt>

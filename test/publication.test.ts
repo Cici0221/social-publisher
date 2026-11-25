@@ -14,3 +14,11 @@ test("marks each platform independently and measures actual UTF-8 and weighted c
   assert.ok(validatePublication("youtube", base, []).errors.some(message => message.includes("素材") || message.includes("视频")));
   assert.ok(validatePublication("youtube", base, []).errors.some(message => message.includes("公开范围")));
 });
+
+test("Instagram preflight detects inherited video covers on image-only tasks", () => {
+  const cover = { id: "cover", mime: "image/jpeg", kind: "IMAGE" as const, bytes: 100, width: 1080,
+    height: 1080, duration: null, status: "READY" };
+  const payload = { ...base, coverId: cover.id, assetIds: ["example"] };
+  const checked = validatePublication("instagram", payload, [{ ...cover, id: "example" }], cover);
+  assert.ok(checked.errors.some(error => error.includes("单个视频")));
+});

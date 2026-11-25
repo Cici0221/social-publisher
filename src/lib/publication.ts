@@ -14,7 +14,7 @@ export type MaterialInfo = {
 
 export type Validation = { errors: string[]; warnings: string[] };
 
-export function validatePublication(key: PlatformKey, payload: PublishPayload, files: MaterialInfo[], cover?: MaterialInfo): Validation {
+export function validatePublication(key: PlatformKey, payload: PublishPayload, files: MaterialInfo[], cover?: MaterialInfo, optionsRequired = true): Validation {
   const rule = platformRules[key];
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -76,13 +76,16 @@ export function validatePublication(key: PlatformKey, payload: PublishPayload, f
 
   if (rule.coverRequired && !cover) errors.push("请为视频选择封面。");
   if (payload.coverId && (!cover || cover.status !== "READY" || cover.kind !== "IMAGE")) errors.push("所选封面不可用。");
+  if (cover && rule.coverFor && (!videos.length || (rule.coverFor === "single-video" && files.length !== 1))) {
+    errors.push(rule.coverFor === "single-video" ? "该平台只允许单个视频使用封面。" : "请选择视频后再使用封面。");
+  }
   if (cover && rule.cover && (!rule.cover.formats.includes(cover.mime) ||
       (rule.cover.maxBytes && Number(cover.bytes) > rule.cover.maxBytes))) errors.push("封面格式或大小不符合平台要求。");
   if (cover && !rule.cover && rule.mode === "direct") warnings.push("该平台的接口不接受单独指定的视频封面。");
 
   for (const option of rule.options ?? []) {
     const value = payload.options[option.key] ?? option.default;
-    const required = option.required || (option.requiredIf && String(payload.options[option.requiredIf.key]) === option.requiredIf.value);
+    const required = optionsRequired && (option.required || (option.requiredIf && String(payload.options[option.requiredIf.key]) === option.requiredIf.value));
     if (value === undefined || value === "") {
       if (required) errors.push(`请填写${option.label}。`);
       continue;

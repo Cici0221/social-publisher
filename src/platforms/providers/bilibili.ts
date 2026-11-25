@@ -226,7 +226,7 @@ export const bilibiliAdapter: PlatformAdapter = {
       return { kind: "success", externalId: resourceId, url };
     }
     if (row?.addit_info?.reject_reason?.trim()) {
-      throw new ProviderError("bilibili_rejected", "哔哩哔哩退回稿件，请在创作中心查看审核意见。", { definite: true });
+      throw new ProviderError("moderation_rejected", "哔哩哔哩退回稿件，请在创作中心查看审核意见。", { definite: true });
     }
     return { kind: "pending", externalId: resourceId, pollInMs: 60_000 };
   },

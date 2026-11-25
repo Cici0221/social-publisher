@@ -3,7 +3,7 @@ import {
   assertUpstreamUrl, bearer, endpoint, envAvailable, expiresIn, form, jsonBody, pkce,
   platformFetch, platformJson, readJson, requireEnv,
 } from "../http";
-import { ProviderError, type AdapterContext, type Media, type PlatformAdapter, type PublishOutcome, type StatusOutcome } from "../types";
+import { ProviderError, type AdapterContext, type Media, type PlatformAdapter, type SuccessOutcome, type PublishOutcome, type StatusOutcome } from "../types";
 
 const tokenUrl = "https://oauth2.googleapis.com/token";
 const api = "https://www.googleapis.com/youtube/v3/";
@@ -109,24 +109,22 @@ async function statusForVideo(context: AdapterContext, videoId: string): Promise
     return { kind: "pending", externalId: id, pollInMs: pendingPoll };
   }
 
-  if (context.cover && context.state.thumbnailSet !== true) {
-    if (context.cover.kind !== "IMAGE" || context.cover.bytes <= 0 || context.cover.bytes > 50_000_000) {
-      throw new ProviderError("youtube_cover", "YouTube 视频已上传，但封面格式或体积不符合要求。", { definite: true });
-    }
-    try {
-      const body = await context.cover.stream();
-      await platformFetch(endpoint(upload + "thumbnails/set", { videoId: id, uploadType: "media" }), {
-        method: "POST", duplex: "half", body,
-        headers: { ...bearer(context.credentials.accessToken), "Content-Type": context.cover.mime, "Content-Length": String(context.cover.bytes) },
-      });
-    } catch (error) {
-      if (error instanceof ProviderError && error.options.retryable) throw error;
-      throw new ProviderError("youtube_cover", "YouTube 视频已上传，但此频道未能设置所选封面。", { definite: true });
-    }
-    await context.checkpoint({ ...context.state, videoId: id, thumbnailSet: true });
+  const delivered: SuccessOutcome = { kind: "success", externalId: id, url: endpoint("https://www.youtube.com/watch", { v: id }) };
+  if (!context.cover || context.state.thumbnailSet === true) return delivered;
+  if (context.cover.kind !== "IMAGE" || context.cover.bytes <= 0 || context.cover.bytes > 50_000_000) {
+    return { ...delivered, warning: "视频已发布，封面格式或体积不合要求。" };
   }
-
-  return { kind: "success", externalId: id, url: endpoint("https://www.youtube.com/watch", { v: id }) };
+  try {
+    const body = await context.cover.stream();
+    await platformFetch(endpoint(upload + "thumbnails/set", { videoId: id, uploadType: "media" }), {
+      method: "POST", duplex: "half", body,
+      headers: { ...bearer(context.credentials.accessToken), "Content-Type": context.cover.mime, "Content-Length": String(context.cover.bytes) },
+    });
+  } catch {
+    return { ...delivered, warning: "视频已发布，封面设置未确认。请在 YouTube Studio 核对。" };
+  }
+  await context.checkpoint({ ...context.state, videoId: id, thumbnailSet: true });
+  return delivered;
 }
 
 export const youtube: PlatformAdapter = {

@@ -384,3 +384,20 @@ test("Threads renews access while preserving the independently tracked grant cut
   }), null);
   assert.equal(refreshCalls, 1);
 });
+
+test("YouTube retains confirmed publishing when optional thumbnail is rejected", async t => {
+  const { context } = makeContext([media("video", "VIDEO")], media("custom", "IMAGE"));
+  context.externalId = "known-video";
+  t.mock.method(globalThis, "fetch", async (input: string) => {
+    const url = new URL(input);
+    if (url.pathname.endsWith("/videos")) return Response.json({ items: [{ id: "known-video", status: { uploadStatus: "processed" } }] });
+    if (url.pathname.endsWith("/thumbnails/set")) return Response.json({}, { status: 403 });
+    throw new Error("unexpected API");
+  });
+  const result = await youtube.queryStatus(context);
+  assert.equal(result.kind, "success");
+  if (result.kind === "success") {
+    assert.match(result.url ?? "", /known-video/);
+    assert.match(result.warning ?? "", /封面设置未确认/);
+  }
+});

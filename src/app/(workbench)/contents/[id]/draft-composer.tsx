@@ -120,7 +120,7 @@ export default function DraftComposer({ initial, accounts, assets, presets }: Re
         <CopyFields key={`${platform ?? "common"}/${language}/${reset}`} controlsId="copy-fields" copy={copy} assets={assets}
           onChange={patch => update(previous => updateDraftCopy(previous, platform, language, patch))} platform={platform} />
       </section>
-      <PlatformPicker draft={draft} accounts={accounts} presets={presets}
+      <PlatformPicker draft={draft} accounts={accounts} assets={assets} presets={presets}
         update={recipe => update(previous => ({ ...previous, selections: recipe(previous.selections) }))} />
     </div>
   </div>;

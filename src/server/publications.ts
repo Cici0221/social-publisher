@@ -107,6 +107,7 @@ async function buildPlan(client: Transaction, id: string, ownerId: string) {
     id: content.id,
     title: draft.versions.ZH.title || "未命名草稿",
     revision: content.revision,
+    contentStatus: content.status,
     reviewRequired: preference?.reviewRequired ?? false,
     rows,
     draft,
@@ -136,12 +137,24 @@ export async function submitPublication(actor: Actor, id: string, revision: numb
       for (const row of ready) {
         const runAt = row.runAt && +new Date(row.runAt) > +now ? new Date(row.runAt) : now;
         const status: TaskStatus = plan.reviewRequired ? "WAITING_APPROVAL" : runAt > now ? "SCHEDULED" : "QUEUED";
-        const task = await tx.publishTask.create({ data: {
-          contentId: id, publisherId: actor.id, mode: row.mode, accountId: row.accountId, platform: row.platform!,
-          language: row.language, payload: row.payload! satisfies Prisma.InputJsonValue, status, runAt,
-          nextRunAt: plan.reviewRequired ? null : runAt,
-        }, select: { id: true } });
-        await audit(tx, actor.id, "publish.task_created", task.id, { contentId: id, accountId: row.accountId, platform: row.platform!, status });
+        const delivery = { mode: row.mode, platform: row.platform!, language: row.language,
+          payload: row.payload! satisfies Prisma.InputJsonValue, status, runAt, nextRunAt: plan.reviewRequired ? null : runAt };
+        const previous = plan.contentStatus === "RETURNED" ? await tx.publishTask.findUnique({
+          where: { contentId_accountId: { contentId: id, accountId: row.accountId } },
+          select: { id: true, status: true, externalId: true, providerState: true, publishedAt: true, leaseToken: true },
+        }) : null;
+        if (previous && (previous.status !== "CANCELLED" || previous.externalId || previous.providerState || previous.publishedAt || previous.leaseToken)) {
+          throw new AppError("该账号已有不可重复提交的任务。", 409);
+        }
+        const task = previous ? await tx.publishTask.update({
+          where: { id: previous.id }, data: { ...delivery, errorCode: null, errorMessage: null,
+            attempt: { increment: 1 }, retryCount: 0 },
+          select: { id: true },
+        }) : await tx.publishTask.create({
+          data: { ...delivery, contentId: id, accountId: row.accountId, publisherId: actor.id }, select: { id: true },
+        });
+        await audit(tx, actor.id, previous ? "publish.task_resubmitted" : "publish.task_created", task.id,
+          { contentId: id, accountId: row.accountId, platform: row.platform!, status });
       }
       if (plan.reviewRequired) {
         const reviewers = await tx.user.findMany({ where: { role: "REVIEWER", active: true }, select: { id: true } });
@@ -161,15 +174,15 @@ export async function submitPublication(actor: Actor, id: string, revision: numb
 export async function publicationProgress(actor: Actor, id: string) {
   const canSeeAll = actor.role === "ADMIN";
   const content = await db().content.findFirst({
-    where: { id, ...(canSeeAll ? {} : { ownerId: actor.id }), status: { in: ["IN_REVIEW", "SUBMITTED"] } },
-    select: { id: true, status: true, versions: true, submittedAt: true, reviewNote: true,
+    where: { id, ...(canSeeAll ? {} : { ownerId: actor.id }), status: { in: ["IN_REVIEW", "SUBMITTED", "RETURNED"] } },
+    select: { id: true, ownerId: true, status: true, versions: true, submittedAt: true, reviewNote: true,
       tasks: { select: tasksForView, orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
   });
   if (!content) throw new AppError("找不到发布记录。", 404);
   return {
     id: content.id,
     title: draftSchema.shape.versions.safeParse(content.versions).data?.ZH.title || "未命名内容",
-    status: content.status, reviewNote: content.reviewNote, submittedAt: content.submittedAt?.toISOString() ?? null,
+    status: content.status, canManage: content.ownerId === actor.id, reviewNote: content.reviewNote, submittedAt: content.submittedAt?.toISOString() ?? null,
     tasks: content.tasks.map(row => ({
       ...row, runAt: row.runAt.toISOString(), publishedAt: row.publishedAt?.toISOString() ?? null,
     })),

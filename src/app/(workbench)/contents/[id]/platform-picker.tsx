@@ -3,12 +3,14 @@
 import { useState, type FormEvent } from "react";
 import { Bookmark, ChevronDown, Globe, MapPin } from "lucide-react";
 import { draftLanguages, resolveDraftCopy, type Draft, type DraftLanguage, type DraftSelection } from "@/lib/draft-schema";
-import { languageLabels, platformKeys, platformRules, type PlatformKey } from "@/lib/platforms";
+import { validatePublication } from "@/lib/publication";
+import { formatBody, languageLabels, platformKeys, platformRules, type PlatformKey } from "@/lib/platforms";
 import type { draftEditorResources } from "@/server/drafts";
 import { CopyCount } from "./copy-fields";
 import styles from "../contents.module.css";
 
 type Resources = Awaited<ReturnType<typeof draftEditorResources>>;
+type Asset = Resources["assets"][number];
 type Account = Resources["accounts"][number];
 type Preset = Resources["presets"][number];
 type SelectionUpdater = (recipe: (previous: DraftSelection[]) => DraftSelection[]) => void;
@@ -20,7 +22,7 @@ const platformRegions = [
 
 function accountIssue(account: Account) {
   if (account.status === "DISABLED") return "账号已停用";
-  return account.available ? null : "授权已过期或需要重新绑定";
+  return account.available ? null : (account.availabilityReason ?? "授权已过期或需要重新绑定");
 }
 
 function PresetPicker({ presets: initial, activeIds, onApply }: {
@@ -78,8 +80,8 @@ function PresetPicker({ presets: initial, activeIds, onApply }: {
   </details>;
 }
 
-function PlatformRow({ platform, accounts, selected, draft, update }: {
-  platform: PlatformKey; accounts: Account[]; selected: Map<string, DraftSelection>; draft: Draft; update: SelectionUpdater;
+function PlatformRow({ platform, accounts, selected, assets, draft, update }: {
+  platform: PlatformKey; accounts: Account[]; selected: Map<string, DraftSelection>; assets: Map<string, Asset>; draft: Draft; update: SelectionUpdater;
 }) {
   const rule = platformRules[platform];
 
@@ -96,6 +98,9 @@ function PlatformRow({ platform, accounts, selected, draft, update }: {
       const issue = accountIssue(account);
       const language = selection?.language ?? account.language;
       const copy = selection ? resolveDraftCopy(draft, platform, language) : undefined;
+      const check = copy && validatePublication(platform, { ...copy, body: formatBody(platform, copy), language,
+        options: selection?.options ?? {} }, copy.assetIds.flatMap(id => { const item = assets.get(id); return item ? [item] : []; }),
+        copy.coverId ? assets.get(copy.coverId) : undefined, false);
       return <div className={styles.account} key={account.id}>
         <label className={styles.accountChoice}>
           <input type="checkbox" checked={Boolean(selection)} disabled={Boolean(issue)}
@@ -116,14 +121,20 @@ function PlatformRow({ platform, accounts, selected, draft, update }: {
           {copy ? <CopyCount copy={copy} platform={platform} />
             : <small className={styles.accountIssue}>{languageLabels[language]}文案尚未填写</small>}
         </div>}
+        {check && check.errors.length > 0 && <ul className="delivery-errors" aria-label="内容校验">
+          {check.errors.map(error => <li key={error}>{error}</li>)}
+        </ul>}
+        {check && check.warnings.filter(warning => warning.includes("比例")).map(warning =>
+          <p className="delivery-notes" key={warning}>{warning}</p>)}
       </div>;
     })}
   </div>;
 }
 
-export default function PlatformPicker({ draft, accounts, presets, update }: {
-  draft: Draft; accounts: Account[]; presets: Preset[]; update: SelectionUpdater;
+export default function PlatformPicker({ draft, accounts, assets, presets, update }: {
+  draft: Draft; accounts: Account[]; assets: Asset[]; presets: Preset[]; update: SelectionUpdater;
 }) {
+  const byAsset = new Map(assets.map(asset => [asset.id, asset]));
   const available = accounts.filter(account => account.available);
   const availableIds = new Set(available.map(account => account.id));
   const selected = new Map(draft.selections.map(row => [row.accountId, row]));
@@ -166,7 +177,7 @@ export default function PlatformPicker({ draft, accounts, presets, update }: {
     {platformRegions.map(({ value, label, Icon }) => <section className={styles.region} key={value}>
       <h3><Icon size={15} aria-hidden="true" /> {label}</h3>
       {platformKeys.filter(platform => platformRules[platform].region === value).map(platform =>
-        <PlatformRow key={platform} platform={platform} draft={draft} selected={selected} update={update}
+        <PlatformRow key={platform} platform={platform} draft={draft} selected={selected} assets={byAsset} update={update}
           accounts={accounts.filter(account => account.platform === platform)} />)}
     </section>)}
   </aside>;

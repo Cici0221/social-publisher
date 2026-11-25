@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { languageLabels, platformRules, type PlatformOption } from "@/lib/platforms";
+import { formatPublishTime, localPublishTimeToDate, publishTimeInput } from "@/lib/publish-time";
+import { PublishZonePicker, usePublishZone } from "@/ui/publish-zone-picker";
 import type { DraftSelection } from "@/lib/draft-schema";
 import type { publicationPlan } from "@/server/publications";
 
@@ -31,6 +33,8 @@ export function PublishReview({ plan }: { plan: Plan }) {
   const [selections, setSelections] = useState<DraftSelection[]>(plan.draft.selections);
   const [dirty, setDirty] = useState(false);
   const [skipInvalid, setSkipInvalid] = useState(false);
+  const [zone, setZone] = usePublishZone();
+  const [uniform, setUniform] = useState("");
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState("");
   const valid = plan.rows.filter(row => !row.errors.length).length;
@@ -45,6 +49,18 @@ export function PublishReview({ plan }: { plan: Plan }) {
       else options[name] = value;
       return { ...selection, options };
     }));
+    setDirty(true);
+  }
+
+  function applySchedule(value: string, accountId?: string) {
+    const date = value ? localPublishTimeToDate(value, zone) : null;
+    if (value && !date) {
+      setMessage("请输入有效的定时时间。");
+      return;
+    }
+    setSelections(current => current.map(selection => !accountId || selection.accountId === accountId
+      ? { ...selection, runAt: date?.toISOString() ?? null } : selection));
+    setMessage("");
     setDirty(true);
   }
 
@@ -67,6 +83,21 @@ export function PublishReview({ plan }: { plan: Plan }) {
 
   return <>
     {!plan.rows.length && <div className="delivery-empty">回到内容编辑页选择要发布的账号。</div>}
+    {plan.rows.length > 0 && <section className="delivery-panel">
+      <h2>发布时间</h2>
+      <p className="muted">时间留空时立即执行。可以统一安排，也可以为每个账号分别设置。</p>
+      <div className="delivery-options">
+        <PublishZonePicker zone={zone} setZone={(value) => { setZone(value); setUniform(""); }} />
+        <label className="form-field"><span>统一定时时间</span><input type="datetime-local" value={uniform}
+          onChange={event => setUniform(event.target.value)} /></label>
+        <button className="button button-outline" type="button" onClick={() => applySchedule(uniform)} disabled={!uniform}>
+          应用到全部账号
+        </button>
+        <button className="button button-outline" type="button" onClick={() => { setUniform(""); applySchedule(""); }}>
+          全部改为立即
+        </button>
+      </div>
+    </section>}
     <div className="delivery-stack">
       {plan.rows.map(row => {
         const rule = row.platform ? platformRules[row.platform] : undefined;
@@ -82,6 +113,13 @@ export function PublishReview({ plan }: { plan: Plan }) {
           </div>}
           {row.errors.length > 0 && <ul className="delivery-errors">{row.errors.map(error => <li key={error}>{error}</li>)}</ul>}
           {row.warnings.length > 0 && <ul className="delivery-notes">{row.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
+          {selection && <div className="delivery-options">
+            <label className="form-field"><span>此账号的定时时间</span>
+              <input type="datetime-local" value={selection.runAt ? publishTimeInput(new Date(selection.runAt), zone) : ""}
+                onChange={event => applySchedule(event.target.value, row.accountId)} />
+            </label>
+            <span className="muted">{selection.runAt ? formatPublishTime(new Date(selection.runAt), zone) : "立即执行"}</span>
+          </div>}
           {Boolean(rule?.options?.length) && <div className="delivery-options">
             {rule?.options?.map(option => <OptionField key={option.key} option={option} value={selection?.options?.[option.key] ?? option.default}
               change={value => change(row.accountId, option.key, value)} />)}

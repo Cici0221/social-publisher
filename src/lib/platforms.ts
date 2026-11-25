@@ -46,6 +46,7 @@ export type PlatformRule = {
   tagsLimit?: Limit;
   suggestedRatio?: number;
   coverRequired?: boolean;
+  coverFor?: "video" | "single-video";
   cover?: MediaRule;
   options?: readonly PlatformOption[];
   backend?: string;
@@ -72,11 +73,11 @@ export const platformRules: Record<PlatformKey, PlatformRule> = {
       { key: "madeForKids", label: "内容面向儿童", type: "check" },
     ], serverOnly: { textForbidden: ["<", ">"] },
   },
-  facebook: { ...international, label: "Facebook", allowText: true, image: { formats: image, maxCount: 10, maxBytes: 10 * MB },
+  facebook: { ...international, label: "Facebook", allowText: true, coverFor: "video", image: { formats: image, maxCount: 10, maxBytes: 10 * MB },
     video: { formats: video, maxCount: 1 }, cover: { formats: jpeg, maxCount: 1 },
     notices: [{ message: "正文上限由 Facebook 公共主页的实际权限和接口返回判定。" }],
   },
-  instagram: { ...international, label: "Instagram", body: body(2200), maxTags: 30, maxMedia: 20, allowMixed: true,
+  instagram: { ...international, label: "Instagram", coverFor: "single-video", body: body(2200), maxTags: 30, maxMedia: 20, allowMixed: true,
     image: { formats: jpeg, maxCount: 20, maxBytes: 8 * MB, minRatio: 4 / 5, maxRatio: 1.91 },
     video: { formats: video, maxCount: 20, maxBytes: 300 * MB, minSeconds: 3, maxSeconds: 900 },
     cover: { formats: jpeg, maxCount: 1, maxBytes: 8 * MB }, suggestedRatio: 9 / 16,
@@ -85,7 +86,7 @@ export const platformRules: Record<PlatformKey, PlatformRule> = {
     image: { formats: ["image/jpeg", "image/png"], maxCount: 20, maxBytes: 8 * MB },
     video: { formats: video, maxCount: 20, maxBytes: 1000 * MB, maxSeconds: 300 }, suggestedRatio: 9 / 16,
   },
-  linkedin: { ...international, label: "LinkedIn", allowText: true, body: body(3000),
+  linkedin: { ...international, label: "LinkedIn", allowText: true, coverFor: "video", body: body(3000),
     image: { formats: image, maxCount: 20, maxPixels: 36_152_319 }, video: { formats: ["video/mp4"], maxCount: 1, maxBytes: 500 * MB, minSeconds: 3, maxSeconds: 1800 },
     cover: { formats: jpeg, maxCount: 1 },
   },

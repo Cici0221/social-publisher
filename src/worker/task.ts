@@ -45,7 +45,7 @@ export async function runTask(id: string) {
   let externalId = task.externalId ?? undefined;
   let state: Envelope = { data: {}, uploaded: false, submitted: false };
   let lost = false;
-  let querying = false;
+  let querying = Boolean(externalId) || phase === "PROCESSING";
   const pulse = setInterval(() => {
     void db().publishTask.updateMany({
       where: { id, leaseToken: token }, data: { leaseExpiresAt: new Date(Date.now() + leaseMs) },
@@ -84,7 +84,7 @@ export async function runTask(id: string) {
   async function finish(outcome: PublishOutcome, next: "UPLOADING" | "PROCESSING" = "PROCESSING") {
     if (outcome.kind === "success") {
       await progress("SUCCESS", { externalId: outcome.externalId, postUrl: outcome.url ?? null, publishedAt: new Date(),
-        nextRunAt: null, providerState: null, errorCode: null, errorMessage: null }, true);
+        nextRunAt: null, providerState: null, errorCode: outcome.warning ? "published_with_warning" : null, errorMessage: outcome.warning ?? null }, true);
       return;
     }
     if (outcome.kind === "manual") {
@@ -104,7 +104,16 @@ export async function runTask(id: string) {
   }
 
   try {
-    if (task.providerState) state = JSON.parse(decrypt(task.providerState, "publish-task:" + id)) as Envelope;
+    if (task.providerState) {
+      try {
+        state = JSON.parse(decrypt(task.providerState, "publish-task:" + id)) as Envelope;
+        if (typeof state.submitted !== "boolean" || typeof state.uploaded !== "boolean" || !state.data) throw new Error("Invalid checkpoint");
+      } catch {
+        querying ||= phase === "PUBLISHING";
+        throw new ProviderError("checkpoint_unreadable", "历史发布状态无法读取，需要在官方后台核对。", { definite: true });
+      }
+    }
+    querying ||= state.submitted;
     if (!isPlatform(task.platform)) throw new ProviderError("invalid_platform", "发布平台不存在。", { definite: true });
     const availability = task.mode === "LIVE" ? liveAvailability(task.platform) : { available: true };
     if (!availability.available) throw new ProviderError("unavailable", "真实发布接入尚不可用。", { definite: true });
@@ -135,8 +144,7 @@ export async function runTask(id: string) {
       },
     };
 
-    if (state.submitted || externalId || phase === "PROCESSING") {
-      querying = true;
+    if (querying) {
       const result: StatusOutcome = await adapter.queryStatus(context);
       querying = false;
       if (result.kind === "unknown") {
@@ -197,7 +205,7 @@ export async function runTask(id: string) {
         errorCode: provider.code, errorMessage: provider.message, providerState: encrypt(JSON.stringify(state), "publish-task:" + id) }, true);
       return;
     }
-    const unclear = state.submitted && (querying ? provider.code !== "post_rejected" && provider.code !== "moderation_rejected" : !provider.options.definite);
+    const unclear = (state.submitted || querying || Boolean(externalId)) && (querying ? provider.code !== "post_rejected" && provider.code !== "moderation_rejected" : !provider.options.definite);
     await progress(unclear ? "UNKNOWN" : "FAILED", { nextRunAt: null, errorCode: provider.code, errorMessage: provider.message }, true);
   } finally {
     clearInterval(pulse);

@@ -1,0 +1,15 @@
+.inbox { overflow: hidden; }
+.tabs { display: flex; gap: 15px; padding: 0 17px; }
+.tabs a { padding: 12px 5px 10px; border-bottom: 2px solid transparent; color: var(--muted); font-size: 0.87rem; }
+.tabs a[aria-current="page"] { border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.rows { list-style: none; padding: 0; margin: 0; }
+.rows li { border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 9px 18px; padding: 13px 17px; }
+.rows li.unread { background: #f0f6ec; }
+.message { display: grid; gap: 5px; min-width: min(100%, 290px); flex: 1; }
+.message p { overflow-wrap: anywhere; }
+.unread .message p { font-weight: 670; }
+.meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 9px; color: var(--muted); font-size: 0.77rem; }
+.unreadText { color: var(--accent-ink); font-size: 0.73rem; font-weight: 700; }
+.actions, .pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.pagination { justify-content: flex-end; margin-top: 13px; }
+.empty { padding: 24px 17px; border-top: 1px solid var(--line); color: var(--muted); }
