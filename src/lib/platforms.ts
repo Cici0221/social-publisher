@@ -36,6 +36,7 @@ export type PlatformRule = {
   video?: MediaRule;
   allowText?: boolean;
   allowMixed?: boolean;
+  exclusiveImageFormats?: readonly string[];
   maxMedia?: number;
   ownTags?: boolean;
   requiredTitle?: boolean;
@@ -64,7 +65,7 @@ const manual = { region: "domestic", mode: "manual" } as const;
 
 export const platformRules: Record<PlatformKey, PlatformRule> = {
   youtube: { ...international, label: "YouTube", requiredTitle: true, title: body(100), body: body(5000, "utf8"), ownTags: true,
-    video: { formats: video, maxCount: 1 }, cover: { formats: ["image/jpeg", "image/png"], maxCount: 1, maxBytes: 2 * MB },
+    video: { formats: video, maxCount: 1 }, cover: { formats: ["image/jpeg", "image/png"], maxCount: 1, maxBytes: 50 * MB },
     options: [
       { key: "privacy", label: "公开范围", type: "choice", choices: choice({ private: "私密", unlisted: "不公开列出", public: "公开" }), required: true },
       { key: "categoryId", label: "视频类别 ID", type: "number", min: 1, default: 22 },
@@ -92,7 +93,7 @@ export const platformRules: Record<PlatformKey, PlatformRule> = {
     image: { formats: image, maxCount: 4, maxBytes: 2_000_000 },
     video: { formats: ["video/mp4"], maxCount: 1, maxBytes: 100 * MB, maxSeconds: 180 },
   },
-  x: { ...international, label: "X", allowText: true, distinctTargets: true, body: body(280, "x"),
+  x: { ...international, label: "X", allowText: true, distinctTargets: true, exclusiveImageFormats: ["image/gif"], body: body(280, "x"),
     image: { formats: image, maxCount: 4, maxBytes: 5 * MB, formatBytes: { "image/gif": 15 * MB } }, video: { formats: ["video/mp4"], maxCount: 1, maxSeconds: 1200 },
     notices: [
       { message: "普通发帖预计 0.015 美元/次，含链接预计 0.20 美元/次。费用以 X 开发者控制台为准。" },
@@ -111,7 +112,7 @@ export const platformRules: Record<PlatformKey, PlatformRule> = {
       { key: "stitch", label: "允许拼接（模拟）", type: "check" },
     ],
   },
-  douyin: { ...domestic, label: "抖音", body: body(1000), image: { formats: image, maxCount: 20 },
+  douyin: { ...domestic, label: "抖音", body: body(1000), image: { formats: image, maxCount: 30, maxBytes: 20 * MB },
     video: { formats: video, maxCount: 1, maxSeconds: 900 }, cover: { formats: jpeg, maxCount: 1, maxBytes: 300 * MB }, suggestedRatio: 9 / 16,
     options: [{ key: "consent", label: "已确认向所选抖音账号发布此次素材、文案和话题", type: "check", required: true }],
   },

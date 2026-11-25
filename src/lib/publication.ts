@@ -24,6 +24,7 @@ export function validatePublication(key: PlatformKey, payload: PublishPayload, f
   if (!files.length && !rule.allowText) errors.push("请添加平台支持的图片或视频。");
   if (!files.length && !payload.body.trim()) errors.push("请填写正文或添加素材。");
   if (images.length && videos.length && !rule.allowMixed) errors.push("该平台不支持在同一条内容中混发图片和视频。");
+  if (files.length > 1 && files.some(file => rule.exclusiveImageFormats?.includes(file.mime))) errors.push("动图需单独发布。");
   if (rule.maxMedia && files.length > rule.maxMedia) errors.push(`素材最多可选 ${rule.maxMedia} 个。`);
   if (files.length !== payload.assetIds.length || files.some(file => file.status !== "READY")) errors.push("有素材不可用。");
   if (rule.requiredTitle && !payload.title.trim()) errors.push("请填写标题。");

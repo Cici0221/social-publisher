@@ -39,7 +39,11 @@ export async function saveDemoAccount(actor: Actor, key: PlatformKey, name: stri
 
 async function saveBinding(actor: Actor, key: PlatformKey, credentials: Credentials[]) {
   if (!credentials.length) throw new AppError("该授权未返回可绑定的账号。", 422);
+  const adapter = adapterFor(key, "LIVE");
+  for (const access of credentials) await adapter.verify(access);
   return db().$transaction(async tx => {
+    const administrator = await tx.user.findUnique({ where: { id: actor.id }, select: { role: true, active: true } });
+    if (!administrator?.active || administrator.role !== "ADMIN") throw new AppError("管理员权限已变更。", 403);
     for (const access of credentials) {
       const mode: AccountMode = "LIVE";
       const existing = await tx.platformAccount.findUnique({

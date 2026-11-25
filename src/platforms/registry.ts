@@ -1,8 +1,19 @@
 import { platformRules, type PlatformKey } from "@/lib/platforms";
 import { bluesky } from "./providers/bluesky";
+import { youtube } from "./providers/youtube";
+import { facebook } from "./providers/facebook";
+import { instagram } from "./providers/instagram";
+import { threads } from "./providers/threads";
+import { linkedin } from "./providers/linkedin";
+import { x } from "./providers/x";
+import { tiktok } from "./providers/tiktok";
+import { douyinAdapter as douyin } from "./providers/douyin";
+import { weiboAdapter as weibo } from "./providers/weibo";
+import { kuaishouAdapter as kuaishou } from "./providers/kuaishou";
+import { bilibiliAdapter as bilibili } from "./providers/bilibili";
 import { ProviderError, type PlatformAdapter, type Credentials } from "./types";
 
-const live: Partial<Record<PlatformKey, PlatformAdapter>> = { bluesky };
+const live: Partial<Record<PlatformKey, PlatformAdapter>> = { youtube, facebook, instagram, threads, linkedin, bluesky, x, tiktok, douyin, weibo, kuaishou, bilibili };
 
 function simulated(key: PlatformKey, manual = false): PlatformAdapter {
   return {
