@@ -8,6 +8,7 @@ import type { Actor } from "./auth";
 import { db, type Transaction } from "./db";
 import { AppError } from "./errors";
 import { notify } from "./notices";
+import { lockPublisher } from "./publisher-access";
 
 const workspace = "workspace";
 const pageSize = 24;
@@ -66,6 +67,9 @@ export async function setReviewRequired(actor: Actor, value: unknown) {
       await requireRoleInTransaction(tx, actor.id, "ADMIN");
       const prior = await tx.preference.findUnique({ where: { id: workspace }, select: { reviewRequired: true } });
       const previous = prior?.reviewRequired ?? false;
+      if (required && !await tx.user.findFirst({ where: { role: "REVIEWER", active: true }, select: { id: true } })) {
+        throw new AppError("请先添加或启用至少一位审核人。", 409);
+      }
       if (previous === required) return { required };
       await tx.preference.upsert({
         where: { id: workspace }, create: { id: workspace, reviewRequired: required }, update: { reviewRequired: required },
@@ -188,6 +192,12 @@ export async function decideReview(actor: Actor, rawId: string, value: unknown) 
   try {
     return await db().$transaction(async tx => {
       await requireRoleInTransaction(tx, actor.id, "REVIEWER");
+      if (approved) {
+        const content = await tx.content.findUnique({ where: { id }, select: { ownerId: true } });
+        if (content && !(await lockPublisher(tx, content.ownerId))?.active) {
+          throw new AppError("发布人已停用，请退回内容。", 409);
+        }
+      }
       await tx.$queryRaw`SELECT "id" FROM "Content" WHERE "id" = ${id} FOR UPDATE`;
       const current = await tx.content.findUnique({
         where: { id }, select: { revision: true, ownerId: true, versions: true, status: true },

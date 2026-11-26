@@ -17,7 +17,8 @@ export function PATCH(request: Request, context: Context) {
 
 export function DELETE(request: Request, context: Context) {
   return writeAssets(request, async actor => {
-    const result = await removeAsset(actor, (await context.params).assetId);
+    const archivePublished = new URL(request.url).searchParams.get("archivePublished") === "1";
+    const result = await removeAsset(actor, (await context.params).assetId, archivePublished);
     if (result.deleted) scheduleAssetWork();
     return Response.json(result, { status: result.deleted ? 200 : 409 });
   });

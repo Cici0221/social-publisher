@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { test, type TestContext } from "node:test";
 import { facebook } from "../src/platforms/providers/facebook";
 import { instagram } from "../src/platforms/providers/instagram";
@@ -42,6 +43,42 @@ function makeContext(files: Media[] = [], cover?: Media) {
 function mockFetch(t: TestContext, request: (url: URL, init: RequestInit) => Promise<Response> | Response) {
   t.mock.method(globalThis, "fetch", (url: string, init: RequestInit) => request(new URL(url), init));
 }
+
+test("YouTube accepts real 308 responses for a position check and a non-final chunk", async t => {
+  const chunk = 32 * 1024 * 1024;
+  const size = chunk + 4;
+  const ranges: string[] = [];
+  const server = createServer((request, response) => {
+    const range = request.headers["content-range"] ?? "";
+    ranges.push(range);
+    request.resume();
+    request.once("end", () => {
+      if (range === `bytes ${chunk}-${size - 1}/${size}`) {
+        response.writeHead(201, { "Content-Type": "application/json" }).end('{"id":"video123"}');
+      } else {
+        response.writeHead(308, range.startsWith("bytes */") ? {} : { Range: `bytes=0-${chunk - 1}` }).end();
+      }
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const nativeFetch = globalThis.fetch;
+  mockFetch(t, (_url, options) => nativeFetch(`http://127.0.0.1:${address.port}/`, options));
+  const video = {
+    ...media("video", "VIDEO"), bytes: size,
+    stream: async (start = 0, end = size - 1) => new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(Buffer.alloc(end - start + 1)); controller.close(); },
+    }),
+  };
+  const { context, submissions } = makeContext([video]);
+  context.state = { sessionUrl: "https://www.googleapis.com/upload/youtube/v3/videos?upload_id=fixture" };
+  assert.deepEqual(await youtube.queryStatus(context), { kind: "safe-to-resume" });
+  assert.deepEqual(await youtube.publish(context), { kind: "pending", externalId: "video123", pollInMs: 15_000 });
+  assert.deepEqual(ranges, [`bytes */${size}`, `bytes 0-${chunk - 1}/${size}`, `bytes ${chunk}-${size - 1}/${size}`]);
+  assert.equal(submissions(), 1);
+});
 
 test("YouTube resumes the same upload after a final write loses its receipt", async t => {
   const { context, submissions } = makeContext([media("video", "VIDEO")], media("cover", "IMAGE"));

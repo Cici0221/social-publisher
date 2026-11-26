@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, CircleAlert, CloudCheck, CloudUpload } from "lucide-react";
+import { ArrowLeft, CircleAlert, CloudCheck, CloudUpload, Trash2 } from "lucide-react";
 import {
   draftLanguages, emptyDraftCopy, resolveDraftCopy, restoreDraftCopy, updateDraftCopy,
   type Draft, type DraftLanguage,
 } from "@/lib/draft-schema";
 import { languageLabels, platformKeys, platformRules, type PlatformKey } from "@/lib/platforms";
-import type { draftEditorResources, findDraft } from "@/server/drafts";
+import type { draftEditorResources, EditorAsset, findDraft } from "@/server/drafts";
 import CopyFields from "./copy-fields";
 import PlatformPicker from "./platform-picker";
 import styles from "../contents.module.css";
@@ -18,23 +18,44 @@ type SaveFailure = { message: string; conflict: boolean };
 
 const saveDelay = 650;
 
-export default function DraftComposer({ initial, accounts, assets, presets }: Resources & { initial: InitialDraft }) {
+export default function DraftComposer({ initial, accounts, assets: initialAssets, presets }: Resources & { initial: InitialDraft }) {
   const [editor, setEditor] = useState({ draft: initial.draft, generation: 0 });
   const [saved, setSaved] = useState({ revision: initial.revision, generation: 0 });
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<SaveFailure | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [chosenAssets, setChosenAssets] = useState<Record<string, EditorAsset>>({});
   const [language, setLanguage] = useState<DraftLanguage>("ZH");
   const [platformTab, setPlatformTab] = useState<PlatformKey | null>(null);
   const [reset, setReset] = useState(0);
   const requestInFlight = useRef(false);
   const draft = editor.draft;
   const dirty = editor.generation !== saved.generation;
+  const assets = Object.values({ ...Object.fromEntries(initialAssets.map(asset => [asset.id, asset])), ...chosenAssets });
 
   function update(recipe: (previous: Draft) => Draft) {
     setEditor(previous => {
       const next = recipe(previous.draft);
       return next !== previous.draft ? { draft: next, generation: previous.generation + 1 } : previous;
     });
+  }
+
+  async function remove() {
+    if (deleting || dirty || requestInFlight.current || !window.confirm("删除这份草稿？删除后将从草稿箱移除并解除素材引用。")) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const response = await fetch(`/api/drafts/${initial.id}`, {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ revision: saved.revision }),
+      });
+      if (!response.ok) throw new Error((await response.json()).error ?? "暂时无法删除草稿。");
+      window.location.replace("/contents");
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "暂时无法删除草稿。");
+      setDeleting(false);
+    }
   }
 
   useEffect(() => {
@@ -88,7 +109,12 @@ export default function DraftComposer({ initial, accounts, assets, presets }: Re
           : dirty ? <><CloudUpload size={17} aria-hidden="true" /><span>{saving ? "正在保存" : "等待保存"}</span></>
             : <><CloudCheck size={17} aria-hidden="true" /><span>{saved.generation ? "已自动保存" : "草稿已保存"}</span></>}
       </div>
-      {!dirty && !failure && draft.selections.length > 0 && <a className="button button-primary" href={`/contents/${initial.id}/publish`}>核对发布清单</a>}
+      <div className={styles.formRow}>
+        <button type="button" className={`button button-outline ${styles.deleteDraft}`} disabled={dirty || saving || deleting} onClick={() => void remove()}>
+          <Trash2 size={16} aria-hidden="true" /> {deleting ? "正在删除" : "删除草稿"}
+        </button>
+        {!dirty && !failure && !deleting && draft.selections.length > 0 && <a className="button button-primary" href={`/contents/${initial.id}/publish`}>核对发布清单</a>}
+      </div>
     </header>
     {initial.status === "RETURNED" && <div className={styles.notice}>
       <strong>审核退回</strong><span>{initial.reviewNote || "请修改后重新提交。"}</span>
@@ -98,7 +124,8 @@ export default function DraftComposer({ initial, accounts, assets, presets }: Re
       {failure.conflict ? <a className={styles.subtleButton} href={`/contents/${initial.id}`} target="_blank" rel="noreferrer">在新标签页查看保存版本</a>
         : <button className={styles.subtleButton} type="button" onClick={() => setFailure(null)}>重试保存</button>}
     </div>}
-    <div className={styles.editorGrid}>
+    {deleteError && <p className={`${styles.notice} ${styles.error}`} role="alert">{deleteError}</p>}
+    <div className={styles.editorGrid} inert={deleting}>
       <section className={styles.copyPanel} aria-label="编辑内容">
         <div className={styles.panelHeader}><h2>文案与素材</h2></div>
         <div className={styles.scopeTabs} role="group" aria-label="选择文案平台">
@@ -118,6 +145,7 @@ export default function DraftComposer({ initial, accounts, assets, presets }: Re
           }}>恢复通用</button>}
         </div>}
         <CopyFields key={`${platform ?? "common"}/${language}/${reset}`} controlsId="copy-fields" copy={copy} assets={assets}
+          onChooseAsset={asset => setChosenAssets(previous => ({ ...previous, [asset.id]: asset }))}
           onChange={patch => update(previous => updateDraftCopy(previous, platform, language, patch))} platform={platform} />
       </section>
       <PlatformPicker draft={draft} accounts={accounts} assets={assets} presets={presets}

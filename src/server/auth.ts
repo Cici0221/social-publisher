@@ -7,10 +7,13 @@ import { audit } from "./audit";
 import { checkPassword, decrypt, digest } from "./crypto";
 import { db } from "./db";
 import { AppError } from "./errors";
+import { consumeRateLimit, withLoginPasswordSlot } from "./rate-limit";
 import { validTotpStep } from "./totp";
 
 const sessionCookie = "publisher_session";
 const sessionLifetime = 8 * 60 * 60 * 1000;
+const passwordChangeLifetime = 10 * 60 * 1000;
+export const temporaryPasswordPath = "/change-temporary-password";
 const loginSchema = z.object({
   email: z.string().trim().email().max(254).transform(value => value.toLowerCase()),
   password: z.string().min(1).max(128),
@@ -21,42 +24,39 @@ export type Actor = { id: string; email: string; name: string; role: Role; activ
 
 const denialMessage = "账号、密码或验证码不正确。";
 
-async function limitLogin(email: string) {
-  const time = new Date();
-  const expiresAt = new Date(+time + 10 * 60_000);
-  const key = digest("login:" + email);
-  const rows = await db().$queryRaw<{ count: number }[]>`
-    INSERT INTO "LoginLimit" ("key", "count", "expiresAt") VALUES (${key}, 1, ${expiresAt})
-    ON CONFLICT ("key") DO UPDATE SET
-      "count" = CASE WHEN "LoginLimit"."expiresAt" <= ${time} THEN 1 ELSE "LoginLimit"."count" + 1 END,
-      "expiresAt" = CASE WHEN "LoginLimit"."expiresAt" <= ${time} THEN ${expiresAt} ELSE "LoginLimit"."expiresAt" END
-    RETURNING "count"`;
-  if (rows[0].count > 8) throw new AppError("登录尝试过多，请稍后再试。", 429);
-  return key;
-}
-
-export async function signIn(input: unknown) {
+export async function signIn(input: unknown, address?: string) {
   const parsed = loginSchema.safeParse(input);
   if (!parsed.success) throw new AppError(denialMessage, 401);
   const { email, password, code } = parsed.data;
-  const limitKey = await limitLogin(email);
-  const user = await db().user.findUnique({ where: { email } });
-  const passwordOk = await checkPassword(password, user?.passwordHash);
-  if (!user?.active || !passwordOk) throw new AppError(denialMessage, 401);
+  const limitKey = address ? await consumeRateLimit(`login:account-address:${email}:${address}`, 8) : undefined;
+  async function deny(): Promise<never> {
+    // Without a trusted source, a failed-password bucket must never block a valid sign-in.
+    if (!address) await consumeRateLimit("login:denied:" + email, 8);
+    throw new AppError(denialMessage, 401);
+  }
+  const { user, passwordOk } = await withLoginPasswordSlot(async () => {
+    const user = await db().user.findUnique({ where: { email } });
+    return { user, passwordOk: await checkPassword(password, user?.passwordHash) };
+  });
+  if (!user?.active || !passwordOk) return deny();
+  const secondFactorKey = await consumeRateLimit("login:totp:" + user.id, 8);
   const step = validTotpStep(email, decrypt(user.totpSecret, "totp:" + user.id), code);
-  if (step === null) throw new AppError(denialMessage, 401);
+  if (step === null) return deny();
 
   const raw = randomBytes(32).toString("base64url");
-  const expiresAt = new Date(Date.now() + sessionLifetime);
+  const expiresAt = new Date(Date.now() + (user.mustChangePassword ? passwordChangeLifetime : sessionLifetime));
   await db().$transaction(async tx => {
     const claimed = await tx.user.updateMany({
       where: { id: user.id, active: true, passwordHash: user.passwordHash, totpSecret: user.totpSecret,
+        mustChangePassword: user.mustChangePassword,
         OR: [{ lastTotpStep: null }, { lastTotpStep: { lt: step } }] },
       data: { lastTotpStep: step },
     });
     if (claimed.count !== 1) throw new AppError(denialMessage, 401);
-    await tx.session.create({ data: { digest: digest(raw), userId: user.id, expiresAt } });
-    await tx.loginLimit.deleteMany({ where: { key: limitKey } });
+    await tx.session.create({
+      data: { digest: digest(raw), userId: user.id, expiresAt, passwordChangeOnly: user.mustChangePassword },
+    });
+    await tx.loginLimit.deleteMany({ where: { key: { in: limitKey ? [limitKey, secondFactorKey] : [secondFactorKey] } } });
     await audit(tx, user.id, "session.sign_in", user.id);
   });
 
@@ -67,25 +67,38 @@ export async function signIn(input: unknown) {
   });
 }
 
-export async function currentActor(): Promise<Actor | null> {
+export async function currentSessionDigest() {
   const raw = (await cookies()).get(sessionCookie)?.value;
-  if (!raw || !/^[A-Za-z0-9_-]{43}$/.test(raw)) return null;
+  return raw && /^[A-Za-z0-9_-]{43}$/.test(raw) ? digest(raw) : null;
+}
+
+export async function currentSession() {
+  const key = await currentSessionDigest();
+  if (!key) return null;
   const row = await db().session.findUnique({
-    where: { digest: digest(raw) }, select: { user: { select: publicUser }, expiresAt: true },
+    where: { digest: key },
+    select: { user: { select: { ...publicUser, mustChangePassword: true } }, expiresAt: true, passwordChangeOnly: true },
   });
-  return row?.user.active && row.expiresAt > new Date() ? row.user : null;
+  if (!row?.user.active || row.expiresAt <= new Date()) return null;
+  const { mustChangePassword, ...actor } = row.user;
+  if (mustChangePassword !== row.passwordChangeOnly) return null;
+  return { actor, passwordChangeOnly: row.passwordChangeOnly };
 }
 
 export async function requireActor(...allowed: Role[]): Promise<Actor> {
-  const actor = await currentActor();
-  if (!actor) throw new AppError("请先登录。", 401);
+  const session = await currentSession();
+  if (!session) throw new AppError("请先登录。", 401);
+  if (session.passwordChangeOnly) throw new AppError("请先修改临时密码。", 403);
+  const { actor } = session;
   if (allowed.length && !allowed.includes(actor.role)) throw new AppError("没有执行此操作的权限。", 403);
   return actor;
 }
 
 export async function pageActor(...allowed: Role[]): Promise<Actor> {
-  const actor = await currentActor();
-  if (!actor) redirect("/login");
+  const session = await currentSession();
+  if (!session) redirect("/login");
+  if (session.passwordChangeOnly) redirect(temporaryPasswordPath);
+  const { actor } = session;
   if (allowed.length && !allowed.includes(actor.role)) redirect("/");
   return actor;
 }

@@ -3,18 +3,23 @@ import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import * as OTPAuth from "otpauth";
 import sharp from "sharp";
+import { emptyDraftCopy } from "../../src/lib/draft-schema";
+import { headObjectBytes } from "../../src/server/assets/storage";
 import { db } from "../../src/server/db";
 import { createMember } from "../../src/server/team";
 
 const baseUrl = new URL(process.env.TEST_BASE_URL ?? "http://127.0.0.1:3000");
 const origin = new URL(process.env.APP_URL ?? "http://localhost:3000").origin;
-if (!["127.0.0.1", "localhost", "[::1]"].includes(baseUrl.hostname) || process.env.APP_MODE !== "local") {
+const endpoints = [baseUrl, new URL(process.env.S3_ENDPOINT ?? "http://unconfigured")];
+if (endpoints.some(endpoint => !["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname)) || process.env.APP_MODE !== "local") {
   throw new Error("素材集成测试需要本机测试环境。");
 }
 const client = db();
 const admin = await client.user.findFirstOrThrow({ where: { role: "ADMIN", active: true }, select: { id: true } });
 const fixtureIds: string[] = [];
-let fixtureContent: string | undefined;
+const fixtureContents: string[] = [];
+let fixtureAccount: string | undefined;
+let fixtureTask: string | undefined;
 let fixtureAsset: string | undefined;
 let fixtureFolder: string | undefined;
 let editorCookie: string | undefined;
@@ -122,23 +127,65 @@ try {
   const matching = await request(`/api/assets?folder=${fixtureFolder}&tag=${encodeURIComponent("开幕式")}`, editor.cookie);
   assert.equal((await matching.json()).assets[0].id, asset.id);
 
-  const content = await client.content.create({ data: { ownerId: editor.id, versions: { ZH: { title: "开幕式预告" } },
+  const copy = { ...emptyDraftCopy(), title: "开幕式预告", assetIds: [asset.id] };
+  const content = await client.content.create({ data: { ownerId: editor.id, versions: { ZH: copy },
     selections: [], overrides: {}, assets: { create: { assetId: asset.id } } } });
-  fixtureContent = content.id;
+  fixtureContents.push(content.id);
   const refs = await request(assetPath, editor.cookie);
   assert.equal((await refs.json()).references[0].title, "开幕式预告");
   assert.equal((await request(assetPath, reviewer.cookie, "DELETE")).status, 403);
   const protectedDelete = await request(assetPath, editor.cookie, "DELETE");
   assert.equal(protectedDelete.status, 409);
   assert.equal((await protectedDelete.json()).references[0].id, content.id);
-  await client.content.delete({ where: { id: content.id } });
-  fixtureContent = undefined;
-  assert.equal((await request(assetPath, editor.cookie, "DELETE")).status, 200);
+  assert.equal((await request(`/api/drafts/${content.id}`, reviewer.cookie, "DELETE", { revision: 0 })).status, 403);
+  assert.equal((await request(`/api/drafts/${content.id}`, editor.cookie, "DELETE", { revision: 0 })).status, 204);
+  assert.deepEqual((await (await request(assetPath, editor.cookie)).json()).references, []);
+
+  const account = await client.platformAccount.create({ data: {
+    platform: "xiaohongshu", externalId: randomUUID(), name: "素材清理验收", mode: "MANUAL",
+  } });
+  fixtureAccount = account.id;
+  const published = await client.content.create({ data: {
+    ownerId: editor.id, status: "SUBMITTED", versions: { ZH: copy }, selections: [], overrides: {},
+    assets: { create: { assetId: asset.id } },
+  } });
+  fixtureContents.push(published.id);
+  const task = await client.publishTask.create({ data: {
+    contentId: published.id, accountId: account.id, publisherId: editor.id, mode: "MANUAL", platform: account.platform,
+    language: "ZH", status: "MANUAL", payload: { ...copy, language: "ZH", options: {} }, runAt: new Date(),
+  } });
+  fixtureTask = task.id;
+  const cleanupPath = assetPath + "?archivePublished=1";
+  const deliveryPath = `/api/publications/tasks/${task.id}/manual`;
+  assert.equal((await request(cleanupPath, editor.cookie, "DELETE")).status, 409);
+  assert.equal((await (await request(deliveryPath, editor.cookie)).json()).canDownload, true);
+  const postUrl = "https://www.xiaohongshu.com/explore/example";
+  assert.equal((await request(deliveryPath, editor.cookie, "POST", { postUrl })).status, 200);
+  assert.equal((await request(assetPath, editor.cookie, "DELETE")).status, 409);
+  const archived = await client.asset.findUniqueOrThrow({ where: { id: asset.id } });
+  assert.equal(await headObjectBytes(archived.objectKey), media.length);
+  assert.equal((await request(cleanupPath, editor.cookie, "DELETE")).status, 200);
+  assert.equal((await request(cleanupPath, editor.cookie, "DELETE")).status, 200);
   fixtureAsset = undefined;
   assert.equal((await request(assetPath + "/file", editor.cookie)).status, 404);
-  console.info("通过：S3 实际分片校验、断点续传、媒体元数据、分页筛选、范围读取、角色隔离和素材引用保护。");
+  assert.equal(await client.contentAsset.count({ where: { contentId: published.id, assetId: asset.id } }), 1);
+  const saved = await (await request(deliveryPath, editor.cookie)).json();
+  assert.equal(saved.postUrl, postUrl);
+  assert.equal(saved.canDownload, false);
+  assert.equal((await request(`/api/publications/tasks/${task.id}/package`, editor.cookie)).status, 404);
+  assert.ok(archived.thumbKey);
+  for (let elapsed = 0; elapsed < 10_000; elapsed += 200) {
+    const stored = await Promise.all([headObjectBytes(archived.objectKey), headObjectBytes(archived.thumbKey)]);
+    if (stored.every(bytes => bytes === undefined)) break;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  assert.equal(await headObjectBytes(archived.objectKey), undefined);
+  assert.equal(await headObjectBytes(archived.thumbKey), undefined);
+  console.info("通过：S3 分片与续传、媒体元数据、筛选和范围读取、草稿删除、终态素材清理和历史保留。");
 } finally {
-  if (fixtureContent) await client.content.deleteMany({ where: { id: fixtureContent } });
+  if (fixtureTask) await client.publishTask.deleteMany({ where: { id: fixtureTask } });
+  await client.content.deleteMany({ where: { id: { in: fixtureContents } } });
+  if (fixtureAccount) await client.platformAccount.deleteMany({ where: { id: fixtureAccount } });
   if (fixtureAsset && editorCookie) await request("/api/assets/" + fixtureAsset, editorCookie, "DELETE").catch(() => undefined);
   if (fixtureFolder) await client.assetFolder.deleteMany({ where: { id: fixtureFolder } });
   await client.user.updateMany({ where: { id: { in: fixtureIds } }, data: { active: false } });

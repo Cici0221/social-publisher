@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 type Delivery = {
   platformLabel: string; accountName: string; backendUrl: string; title: string; body: string;
-  copy: string; hasTitle: boolean; postUrl: string | null; publishedAt: string | null; canConfirm: boolean;
+  copy: string; hasTitle: boolean; postUrl: string | null; publishedAt: string | null; canConfirm: boolean; canDownload: boolean;
 };
 
 function errorText(error: unknown, fallback: string) {
@@ -95,9 +95,10 @@ export function ManualDelivery({ taskId }: { taskId: string }) {
     </div>
     <div className="form-actions">
       <button className="button button-outline button-compact" type="button" disabled={!delivery.copy} onClick={copy}><Copy size={14} aria-hidden="true" /> 复制文案</button>
-      <a className="button button-outline button-compact" href={api + "/package"} download><Download size={14} aria-hidden="true" /> 下载素材包</a>
+      {delivery.canDownload && <a className="button button-outline button-compact" href={api + "/package"} download><Download size={14} aria-hidden="true" /> 下载素材包</a>}
       <a className="button button-primary button-compact" href={delivery.backendUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} aria-hidden="true" /> 打开官方后台</a>
     </div>
+    {!delivery.canDownload && <p className="muted">原件已清理或不可用，无法下载素材包。</p>}
     {delivery.canConfirm && <form className="form-stack" onSubmit={confirm}>
       <label className="field">
         <span>发布后的帖子链接</span>

@@ -24,3 +24,9 @@ OAuth 应用使用 `APP_URL` 加 `/api/accounts/oauth/<平台键>` 作为回调�
 可选 `META_GRAPH_VERSION` 默认 `v27.0`，供 Facebook 和 Instagram 的 Graph 接口使用。`LINKEDIN_API_VERSION` 默认 `202611`，用于 LinkedIn Marketing API 请求头。平台停用旧版本时，按官方发布说明升级并重新验收。[Meta Graph API](https://developers.facebook.com/docs/graph-api/overview/)、[LinkedIn 版本管理](https://learn.microsoft.com/en-us/linkedin/marketing/versioning)
 
 Facebook 视频、Instagram 和 Threads 从 `S3_PROVIDER_ENDPOINT` 对应的短期签名 URL 读取媒体。该端点需要能从相应平台访问。避免将签名 URL 或查询参数保存到网关日志。[Meta 视频参考](https://developers.facebook.com/docs/graph-api/reference/page/videos/)、[Instagram 发布](https://developers.facebook.com/documentation/instagram-platform/content-publishing)、[Threads 发布](https://developers.facebook.com/documentation/threads/reference/publishing)
+
+## 人工核对帖子链接
+
+从官方帖子页面复制链接。工作台也识别 Facebook 的组合帖子 ID、YouTube 隐私模式嵌入链接、LinkedIn 帖子嵌入链接、TikTok 官方播放器链接和抖音官方分享链接。YouTube 隐私模式嵌入链接和 LinkedIn 嵌入链接会保存为相应的帖子页面地址。[Facebook Page Feed](https://developers.facebook.com/docs/graph-api/reference/v2.5/page/feed/)、[YouTube 嵌入说明](https://support.google.com/youtube/answer/171780?hl=en)、[LinkedIn 嵌入示例](https://www.linkedin.com/posts/alexisakerr_activity-7477858519556395008-mpan)、[TikTok 官方播放器](https://developers.tiktok.com/docs/en/embed-player)、[抖音开放平台分享示例](https://developer.open-douyin.com/forum/question/post/5f3bf1a70e7d060231106dfd)
+
+如果工作台无法识别链接，管理员可先在官方后台查看对应帖子，再用帖子编号或其他核对依据确认已发布。任务会显示已人工核对，不生成可点击的帖子链接。可选填官方链接，系统只在审计记录里保留域名及路径。真实账号验收时可记录新链接格式的域名和路径，供更新匹配规则。

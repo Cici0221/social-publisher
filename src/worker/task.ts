@@ -7,9 +7,12 @@ import { ProviderError, type AdapterContext, type ProviderState, type PublishOut
 import { accountCredentials } from "@/server/account-secrets";
 import { audit } from "@/server/audit";
 import { decrypt, encrypt } from "@/server/crypto";
-import { db } from "@/server/db";
+import { db, type Transaction } from "@/server/db";
+import { errorDetails, logError, withLogContext } from "@/server/logging";
 import { notify } from "@/server/notices";
 import { providerMedia } from "@/server/provider-media";
+import { lockPublisher } from "@/server/publisher-access";
+import { publisherDisabled } from "@/server/schedules";
 
 const leaseMs = 90_000;
 const pollingWindow = 24 * 60 * 60 * 1000;
@@ -24,8 +27,14 @@ type Envelope = {
 };
 
 class LeaseLost extends Error {}
+class PublisherDisabled extends Error {}
 
-export async function runTask(id: string) {
+export function runTask(id: string) {
+  const logContext: { taskId: string; platform?: string } = { taskId: id };
+  return withLogContext(logContext, () => runLoggedTask(id, logContext));
+}
+
+async function runLoggedTask(id: string, logContext: { platform?: string }) {
   const time = new Date();
   const token = randomUUID();
   const claim = await db().publishTask.updateMany({
@@ -37,8 +46,11 @@ export async function runTask(id: string) {
   });
   if (!claim.count) return;
 
-  const task = await db().publishTask.findUnique({ where: { id }, include: { account: true } });
+  const task = await db().publishTask.findUnique({
+    where: { id, leaseToken: token }, include: { account: true, publisher: { select: { active: true } } },
+  });
   if (!task) return;
+  logContext.platform = task.platform;
   const label = isPlatform(task.platform) ? platformRules[task.platform].label : "平台";
   const phase = task.status;
   const attempt = task.attempt;
@@ -56,6 +68,8 @@ export async function runTask(id: string) {
   async function progress(status: TaskStatus, data: Prisma.PublishTaskUpdateManyMutationInput = {}, release = false) {
     if (lost) throw new LeaseLost();
     await db().$transaction(async tx => {
+      const requiresActivePublisher = status === "MANUAL" || (status === "SUCCESS" && task!.mode === "MOCK");
+      if (requiresActivePublisher && !(await lockPublisher(tx, task!.publisherId))?.active) throw new PublisherDisabled();
       const updated = await tx.publishTask.updateMany({
         where: { id, leaseToken: token, attempt },
         data: { ...data, status, ...(release ? { leaseExpiresAt: null, leaseToken: null } : {}) },
@@ -74,10 +88,10 @@ export async function runTask(id: string) {
     });
   }
 
-  async function checkpoint(extra: Prisma.PublishTaskUpdateManyMutationInput = {}) {
+  async function checkpoint(extra: Prisma.PublishTaskUpdateManyMutationInput = {}, client: Transaction = db(), savedState = state) {
     if (lost) throw new LeaseLost();
-    const saved = await db().publishTask.updateMany({ where: { id, leaseToken: token, attempt },
-      data: { ...extra, providerState: encrypt(JSON.stringify(state), "publish-task:" + id) } });
+    const saved = await client.publishTask.updateMany({ where: { id, leaseToken: token, attempt },
+      data: { ...extra, providerState: encrypt(JSON.stringify(savedState), "publish-task:" + id) } });
     if (!saved.count) throw new LeaseLost();
   }
 
@@ -108,12 +122,14 @@ export async function runTask(id: string) {
       try {
         state = JSON.parse(decrypt(task.providerState, "publish-task:" + id)) as Envelope;
         if (typeof state.submitted !== "boolean" || typeof state.uploaded !== "boolean" || !state.data) throw new Error("Invalid checkpoint");
-      } catch {
+      } catch (error) {
+        logError("worker.checkpoint_unreadable", { attempt, error: errorDetails(error) });
         querying ||= phase === "PUBLISHING";
         throw new ProviderError("checkpoint_unreadable", "历史发布状态无法读取，需要在官方后台核对。", { definite: true });
       }
     }
     querying ||= state.submitted;
+    if (!querying && !task.publisher.active) throw new PublisherDisabled();
     if (!isPlatform(task.platform)) throw new ProviderError("invalid_platform", "发布平台不存在。", { definite: true });
     const availability = task.mode === "LIVE" ? liveAvailability(task.platform) : { available: true };
     if (!availability.available) throw new ProviderError("unavailable", "真实发布接入尚不可用。", { definite: true });
@@ -134,13 +150,17 @@ export async function runTask(id: string) {
       taskId: id, createdAt: task.createdAt, media, cover, payload, credentials, state: state.data, externalId,
       checkpoint: async value => { state.data = value; context.state = value; await checkpoint(); },
       beginSubmission: async () => {
-        const permitted = await db().platformAccount.findFirst({
-          where: { id: task.accountId, status: "ACTIVE", mode: task.mode, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
-          select: { id: true },
+        // Serialize the durable submission checkpoint with disabling the publisher.
+        await db().$transaction(async tx => {
+          if (!(await lockPublisher(tx, task.publisherId))?.active) throw new PublisherDisabled();
+          const permitted = await tx.platformAccount.findFirst({
+            where: { id: task.accountId, status: "ACTIVE", mode: task.mode, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+            select: { id: true },
+          });
+          if (!permitted) throw new ProviderError("account_disabled", "账号授权在发布前已失效。", { definite: true });
+          await checkpoint({ status: "PUBLISHING" }, tx, { ...state, submitted: true });
         });
-        if (!permitted) throw new ProviderError("account_disabled", "账号授权在发布前已失效。", { definite: true });
         state.submitted = true;
-        await checkpoint({ status: "PUBLISHING" });
       },
     };
 
@@ -158,6 +178,7 @@ export async function runTask(id: string) {
       }
       state.submitted = false;
       state.pollFrom = undefined;
+      if (!task.publisher.active) throw new PublisherDisabled();
       await checkpoint();
     }
 
@@ -179,6 +200,17 @@ export async function runTask(id: string) {
     await finish(result);
   } catch (error) {
     if (error instanceof LeaseLost) return;
+    if (error instanceof PublisherDisabled) {
+      try {
+        await progress("CANCELLED", { nextRunAt: null, providerState: null, ...publisherDisabled }, true);
+      } catch (failure) {
+        if (!(failure instanceof LeaseLost)) throw failure;
+      }
+      return;
+    }
+    if (!(error instanceof ProviderError)) {
+      logError("worker.task_failed", { attempt, phase, error: errorDetails(error) });
+    }
     const provider = error instanceof ProviderError ? error :
       new ProviderError("internal_error", "任务暂时未能完成。", { retryable: true });
     if (provider.options.reauth) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, CalendarDays, ClipboardCheck, FilePenLine, History, Images, Cable, LayoutDashboard, ShieldCheck, UsersRound } from "lucide-react";
+import { Bell, CalendarDays, ClipboardCheck, FilePenLine, History, Images, Cable, KeyRound, LayoutDashboard, ShieldCheck, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Role } from "@/generated/prisma/enums";
@@ -16,6 +16,7 @@ const navigation = [
   { href: "/admin/review-settings", label: "审核设置", icon: ShieldCheck, allowed: ["ADMIN"] },
   { href: "/admin/accounts", label: "平台账号", icon: Cable, allowed: ["ADMIN"] },
   { href: "/admin/members", label: "成员管理", icon: UsersRound, allowed: ["ADMIN"] },
+  { href: "/settings/security", label: "账号安全", icon: KeyRound, allowed: ["ADMIN", "EDITOR", "REVIEWER"] },
 ];
 
 export function WorkbenchNavigation({ role }: { role: Role }) {

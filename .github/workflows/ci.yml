@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install media tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Type check
+        run: |
+          npm exec -- next typegen
+          npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Start isolated integration services
+        run: |
+          cp .env.example .env
+          docker compose -p publisher-ci up -d --wait --wait-timeout 90 db redis s3
+      - name: Integration tests
+        shell: bash
+        env:
+          APP_MODE: local
+          REVIEW_TEST_DATABASE_URL: postgresql://publisher:publisher-dev@127.0.0.1:55432/publisher_review_ci
+        run: |
+          npm run db:deploy
+          npm run bootstrap
+          docker compose -p publisher-ci exec -T db createdb -U publisher publisher_review_ci
+          DATABASE_URL="$REVIEW_TEST_DATABASE_URL" npm run db:deploy
+
+          npm exec -- tsx test/integration/auth-limits.ts
+          npm exec -- tsx test/integration/draft-store.ts
+          npm exec -- tsx test/integration/credentials.ts
+          npm exec -- tsx test/integration/manual-delivery.ts
+          npm exec -- tsx test/integration/review-flow.ts
+          # This fixture starts its own Worker to verify restart recovery.
+          npm exec -- tsx test/integration/schedule-guard.ts
+
+          web_pid=
+          worker_pid=
+          stop_process() {
+            if [[ -n "$1" ]]; then
+              kill "$1" 2>/dev/null || true
+              wait "$1" 2>/dev/null || true
+            fi
+          }
+          trap 'stop_process "$worker_pid"; stop_process "$web_pid"' EXIT
+
+          ./node_modules/.bin/next start --hostname 127.0.0.1 > "$RUNNER_TEMP/publisher-web.log" 2>&1 &
+          web_pid=$!
+          curl -fsS --retry 30 --retry-all-errors --retry-delay 1 --max-time 2 http://127.0.0.1:3000/api/health
+
+          node --import tsx src/worker/index.ts > "$RUNNER_TEMP/publisher-worker.log" 2>&1 &
+          worker_pid=$!
+          npm exec -- tsx test/integration/auth.ts
+          npm exec -- tsx test/integration/temporary-password.ts
+          npm exec -- tsx test/integration/asset-multipart.ts
+          npm exec -- tsx test/integration/all-platforms.ts
+          stop_process "$worker_pid"
+          worker_pid=
+
+          # The failure isolation fixture specifically expects X to reject the mock post.
+          MOCK_FAIL_PLATFORM=x node --import tsx src/worker/index.ts > "$RUNNER_TEMP/publisher-worker-failure.log" 2>&1 &
+          worker_pid=$!
+          npm exec -- tsx test/integration/publish-queue.ts
+      - name: Report integration logs on failure
+        if: failure()
+        run: |
+          for log in "$RUNNER_TEMP"/publisher-*.log; do
+            if [[ -f "$log" ]]; then
+              tail -n 150 "$log"
+            fi
+          done
+          if [[ -f .env ]]; then
+            docker compose -p publisher-ci logs --tail 100 db redis s3
+          fi
+      - name: Remove disposable integration services
+        if: always()
+        run: |
+          if [[ -f .env ]]; then
+            docker compose -p publisher-ci down -v
+          fi

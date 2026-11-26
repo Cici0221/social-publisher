@@ -1,6 +1,7 @@
 "use client";
 
 import { UserRoundPlus, X } from "lucide-react";
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import type { Role } from "@/generated/prisma/enums";
@@ -124,6 +125,8 @@ export function MemberSettings({ member, self }: { member: MemberRow; self: bool
           <input type="hidden" name="id" value={member.id} />
           <button className="button button-outline button-compact" type="submit" disabled={pending}
             aria-label={`保存${member.name}的设置`}>{pending ? "保存中…" : "保存"}</button>
+          {member.active && <Link className="button button-outline button-compact" href={`/admin/members/${member.id}/credentials`}
+            aria-label={`重置${member.name}的凭据`}>重置凭据</Link>}
           {state.error && <span className="small feedback-inline" role="alert">{state.error}</span>}
           {state.message && <span className="small muted" role="status">{state.message}</span>}
         </form>

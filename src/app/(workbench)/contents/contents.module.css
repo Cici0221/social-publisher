@@ -7,6 +7,8 @@
 .back { color: var(--accent-ink); font-weight: 680; }
 .back:hover { text-decoration: underline; text-underline-offset: 3px; }
 .saveState { color: var(--accent-ink); white-space: nowrap; align-self: flex-start; padding-top: 9px; }
+.deleteDraft { color: var(--danger); }
+.pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; font-size: .8rem; color: var(--muted); }
 .list { display: grid; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .draftRow { display: flex; align-items: center; gap: 12px; padding: 16px 19px; background: var(--paper); }
 .draftRow + .draftRow { border-top: 1px solid var(--line); }

@@ -61,6 +61,7 @@ services:
     command: ["sh", "-c", "npm run db:deploy && npm run bootstrap && exec npm start"]
     ports:
       - "127.0.0.1:3000:3000"
+    restart: unless-stopped
     init: true
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]

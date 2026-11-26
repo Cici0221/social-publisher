@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { draftUpdateSchema } from "@/lib/draft-schema";
 import { requireActor } from "@/server/auth";
-import { findDraft, saveDraft } from "@/server/drafts";
-import { AppError, assertSameOrigin, errorResponse } from "@/server/errors";
+import { deleteDraft, findDraft, saveDraft } from "@/server/drafts";
+import { AppError, assertSameOrigin, errorResponse, readJson } from "@/server/errors";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -27,9 +27,22 @@ export async function PUT(request: Request, context: Context) {
   try {
     assertSameOrigin(request);
     const actor = await requireActor("ADMIN", "EDITOR");
-    const parsed = draftUpdateSchema.safeParse(await request.json().catch(() => null));
+    const parsed = draftUpdateSchema.safeParse(await readJson(request));
     if (!parsed.success) throw new AppError("草稿格式或字段长度不符合要求。", 422);
     return Response.json(await saveDraft(actor.id, await draftId(context), parsed.data));
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function DELETE(request: Request, context: Context) {
+  try {
+    assertSameOrigin(request);
+    const actor = await requireActor("ADMIN", "EDITOR");
+    const parsed = draftUpdateSchema.pick({ revision: true }).safeParse(await readJson(request));
+    if (!parsed.success) throw new AppError("草稿版本无效。", 422);
+    await deleteDraft(actor.id, await draftId(context), parsed.data.revision);
+    return new Response(null, { status: 204 });
   } catch (error) {
     return errorResponse(error);
   }

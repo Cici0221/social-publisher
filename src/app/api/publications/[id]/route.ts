@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { requireActor } from "@/server/auth";
-import { AppError, assertSameOrigin, errorResponse } from "@/server/errors";
+import { AppError, assertSameOrigin, errorResponse, readJson } from "@/server/errors";
 import { publicationProgress, submitPublication } from "@/server/publications";
 
 type Context = { params: Promise<{ id: string }> };
@@ -17,7 +17,7 @@ export async function POST(request: Request, { params }: Context) {
   try {
     assertSameOrigin(request);
     const actor = await requireActor("ADMIN", "EDITOR");
-    const data = submission.safeParse(await request.json());
+    const data = submission.safeParse(await readJson(request));
     if (!data.success) throw new AppError("发布清单参数无效。", 422);
     const id = await submitPublication(actor, (await params).id, data.data.revision, data.data.skipInvalid);
     return Response.json({ id, href: `/contents/${id}/progress` }, { status: 202 });

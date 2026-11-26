@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import { ShieldCheck } from "lucide-react";
 import { redirect } from "next/navigation";
-import { currentActor } from "@/server/auth";
+import { currentSession, temporaryPasswordPath } from "@/server/auth";
 import { Brand } from "@/ui/brand";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "登录" };
 
 export default async function LoginPage() {
-  if (await currentActor()) redirect("/");
+  const session = await currentSession();
+  if (session) redirect(session.passwordChangeOnly ? temporaryPasswordPath : "/");
 
   return (
     <main className="login-page">

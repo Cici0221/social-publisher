@@ -29,9 +29,14 @@ try {
   const password = "local integration account";
   const editor = await createMember(admin.id, { email: editorEmail, name: "验收编辑", role: "EDITOR", password });
   const reviewer = await createMember(admin.id, { email: reviewerEmail, name: "验收审核人", role: "REVIEWER", password });
+  const malformed = await fetch(new URL("/api/auth/login", url), { method: "POST", headers: { origin }, body: "{" });
+  assert.equal(malformed.status, 400);
+  for (let attempt = 0; attempt < 9; attempt++) {
+    assert.equal((await login(editorEmail, "wrong fixture password", "000000")).status, attempt < 8 ? 401 : 429);
+  }
   const editorCode = code(editor.secret);
   const malformedCode = (Number(editorCode) + 30) % 1_000_000;
-  assert.equal((await login(editorEmail, password, String(malformedCode).padStart(6, "0"))).status, 401);
+  assert.equal((await login(editorEmail, password, String(malformedCode).padStart(6, "0"))).status, 429);
   for (const [email, otp] of [[editorEmail, editorCode], [reviewerEmail, code(reviewer.secret)]]) {
     const response = await login(email, password, otp);
     assert.equal(response.status, 200);

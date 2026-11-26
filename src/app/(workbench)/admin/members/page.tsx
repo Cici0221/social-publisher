@@ -15,7 +15,7 @@ export default async function MembersPage() {
   return (
     <div className="page-container">
       <header className="page-header">
-        <div><h1>成员管理</h1><p className="muted">管理宣传部成员的角色和登录权限。</p></div>
+        <div><h1>成员管理</h1><p className="muted">停用成员会取消其待审核、排队及定时任务。已发往平台的任务会继续核对结果。</p></div>
       </header>
 
       <NewMemberForm />

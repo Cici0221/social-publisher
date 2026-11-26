@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { errorDetails, logError } from "@/server/logging";
+import { responseDiagnostics } from "./error-diagnostics";
 import { ProviderError } from "./types";
 
 type RequestOptions = RequestInit & { duplex?: "half"; timeoutMs?: number };
@@ -62,15 +64,20 @@ export function assertUpstreamUrl(raw: string, hosts: readonly string[]): string
 
 export async function platformFetch(url: string, init: RequestOptions = {}, allowed: number[] = []): Promise<Response> {
   if (!url.startsWith("https://")) throw new ProviderError("invalid_protocol", "拒绝通过非 HTTPS 连接调用平台。", { definite: true });
+  const upstream = new URL(url);
   const { timeoutMs = 60_000, ...request } = init;
   let response: Response;
   try {
     response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(timeoutMs), ...request });
-  } catch {
+  } catch (error) {
+    logError("platform.connection_failed", { host: upstream.hostname, error: errorDetails(error) });
     throw new ProviderError("network", "平台接口连接中断或超时。", { retryable: true });
   }
   if (response.ok || allowed.includes(response.status)) return response;
   const status = response.status;
+  logError("platform.request_rejected", {
+    host: upstream.hostname, status, diagnostic: await responseDiagnostics(response, upstream, request),
+  });
   if (status === 401) throw new ProviderError("authorization", "平台账号授权已失效。", { definite: true, reauth: true });
   if (status === 429) {
     const retry = response.headers.get("retry-after");

@@ -23,7 +23,7 @@ type Modal =
 const uploaderTypes = ".jpg,.jpeg,.png,.gif,.mp4,.mov";
 const statusLabel = { READY: "可用", PROCESSING: "读取媒体信息中", FAILED: "无法使用", DELETED: "已删除" };
 const transferLabel = { queued: "等待上传", sending: "上传中", done: "已上传", paused: "已暂停", error: "上传失败" };
-const contentStatusLabel = { DRAFT: "草稿", IN_REVIEW: "待审核", RETURNED: "已退回", SUBMITTED: "已提交" };
+const contentStatusLabel = { DRAFT: "草稿", IN_REVIEW: "待审核", RETURNED: "已退回", SUBMITTED: "已提交", DISCARDED: "已删除" };
 const displayDate = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai",
   month: "2-digit", day: "2-digit", year: "numeric" });
 
@@ -191,7 +191,8 @@ export function AssetLibrary({ initial, actorId, canManage }: {
         await assetRequest(`/api/assets/${modal.asset.id}`, undefined, "PATCH",
           { tags, folderId: String(values.get("folder") ?? "") || null });
       } else {
-        const response = await fetch(`/api/assets/${modal.asset.id}`, { method: "DELETE" });
+        const archive = modal.references.length ? "?archivePublished=1" : "";
+        const response = await fetch(`/api/assets/${modal.asset.id}${archive}`, { method: "DELETE" });
         const payload = await response.json() as { error?: string; references?: AssetReference[] };
         if (response.status === 409 && payload.references?.length) {
           setModal({ ...modal, references: payload.references });
@@ -210,6 +211,7 @@ export function AssetLibrary({ initial, actorId, canManage }: {
 
   const lastPage = Math.max(1, Math.ceil(result.total / result.limit));
   const activeModalTitle = modal?.type === "folder" ? "新建素材文件夹" : modal?.type === "edit" ? "整理素材" : "删除素材";
+  const blocked = modal?.type === "remove" && modal.references.some(reference => reference.blocksDelete);
 
   return (
     <div className="page-container">
@@ -338,17 +340,21 @@ export function AssetLibrary({ initial, actorId, canManage }: {
           {modal.type === "remove" && <>
             <p className={styles.dialogFilename}>{modal.asset.filename}</p>
             {modal.references.length > 0 ? <>
-              <p>此素材仍被以下内容引用。移除引用后可删除。</p>
-              <ul className={styles.references}>{modal.references.map(ref => <li key={ref.id}>
-                {ref.canOpen ? <Link className="text-link" href={`/contents/${ref.id}`}>{ref.title}</Link> : <span>{ref.title}</span>}
-                <span>{contentStatusLabel[ref.status]}</span>
-              </li>)}</ul>
+              <p>{blocked ? "草稿、审核中或仍可继续发布的任务正在使用此素材。请先处理这些内容。"
+                : "确认后将删除素材原件和缩略图。发布记录和帖子链接仍可查看，使用此素材的历史素材包将无法下载。"}</p>
+              <ul className={styles.references}>{modal.references.map(ref => {
+                const detail = ref.status === "IN_REVIEW" || ref.status === "SUBMITTED" ? "/progress" : "";
+                return <li key={ref.id}>
+                  {ref.canOpen ? <Link className="text-link" href={`/contents/${ref.id}${detail}`}>{ref.title}</Link> : <span>{ref.title}</span>}
+                  <span>{contentStatusLabel[ref.status]}{ref.blocksDelete ? " · 仍需保留" : ""}</span>
+                </li>;
+              })}</ul>
             </> : <p>该文件未被内容引用。确认后将删除素材及其原件。</p>}
           </>}
           {modalError && <p className={styles.error} role="alert">{modalError}</p>}
           <footer><button type="button" className="button button-outline" onClick={() => setModal(null)} disabled={saving}>
-            {modal.type === "remove" && modal.references.length ? "关闭" : "取消"}</button>
-            {(modal.type !== "remove" || !modal.references.length) &&
+            {blocked ? "关闭" : "取消"}</button>
+            {!blocked &&
               <button className={`button ${modal.type === "remove" ? styles.dangerButton : "button-primary"}`} disabled={saving}>
                 {saving ? "处理中…" : modal.type === "remove" ? "确认删除" : "保存"}</button>}
           </footer>

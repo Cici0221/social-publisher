@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowUpRight, FileText } from "lucide-react";
 import { pageActor } from "@/server/auth";
-import { listDrafts } from "@/server/drafts";
+import { draftPageNumber, listDrafts } from "@/server/drafts";
 import NewDraftButton from "./new-draft";
 import styles from "./contents.module.css";
 
@@ -9,9 +9,11 @@ const updatedFormat = new Intl.DateTimeFormat("zh-CN", {
   dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai",
 });
 
-export default async function ContentsPage() {
+export default async function ContentsPage({ searchParams }: { searchParams: Promise<{ page?: string | string[] }> }) {
   const actor = await pageActor("ADMIN", "EDITOR");
-  const drafts = await listDrafts(actor.id);
+  const { page: rawPage } = await searchParams;
+  const page = draftPageNumber(typeof rawPage === "string" ? rawPage : undefined);
+  const { drafts, hasMore } = await listDrafts(actor.id, page);
 
   return <section className={`page-container ${styles.page}`}>
     <header className={styles.heading}>
@@ -28,8 +30,12 @@ export default async function ContentsPage() {
       </Link>)}
     </div> : <div className={styles.empty}>
       <FileText size={30} strokeWidth={1.4} aria-hidden="true" />
-      <h2>还没有草稿</h2>
-      <p>新建发布后，编辑内容会自动保存在这里。</p>
+      <h2>{page > 1 ? "本页没有草稿" : "还没有草稿"}</h2>
     </div>}
+    {(page > 1 || hasMore) && <nav className={styles.pagination} aria-label="草稿分页">
+      {page > 1 && <Link className="button button-outline button-compact" href={page === 2 ? "/contents" : `/contents?page=${page - 1}`}>上一页</Link>}
+      <span>第 {page} 页</span>
+      {hasMore && <Link className="button button-outline button-compact" href={`/contents?page=${page + 1}`}>下一页</Link>}
+    </nav>}
   </section>;
 }

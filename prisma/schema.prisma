@@ -49,6 +49,7 @@ enum ContentStatus {
   IN_REVIEW
   RETURNED
   SUBMITTED
+  DISCARDED
 }
 
 enum TaskStatus {
@@ -66,34 +67,36 @@ enum TaskStatus {
 }
 
 model User {
-  id           String           @id @default(uuid())
-  email        String           @unique
-  name         String
-  role         Role
-  passwordHash String
-  totpSecret   String
-  lastTotpStep BigInt?
-  active       Boolean          @default(true)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  sessions     Session[]
-  contents     Content[]
-  assets       Asset[]
-  uploads      UploadSession[]
-  presets      PlatformPreset[]
-  notices      Notification[]
-  reviews      Review[]
-  audit        AuditLog[]
-  oauthStates  OAuthState[]
-  published    PublishTask[]    @relation("Publisher")
-  confirmed    PublishTask[]    @relation("Confirmer")
+  id                 String           @id @default(uuid())
+  email              String           @unique
+  name               String
+  role               Role
+  passwordHash       String
+  mustChangePassword Boolean          @default(false)
+  totpSecret         String
+  lastTotpStep       BigInt?
+  active             Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  sessions           Session[]
+  contents           Content[]
+  assets             Asset[]
+  uploads            UploadSession[]
+  presets            PlatformPreset[]
+  notices            Notification[]
+  reviews            Review[]
+  audit              AuditLog[]
+  oauthStates        OAuthState[]
+  published          PublishTask[]    @relation("Publisher")
+  confirmed          PublishTask[]    @relation("Confirmer")
 }
 
 model Session {
-  digest    String   @id
-  userId    String
-  expiresAt DateTime
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  digest             String   @id
+  userId             String
+  expiresAt          DateTime
+  passwordChangeOnly Boolean  @default(false)
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])

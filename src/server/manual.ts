@@ -67,12 +67,19 @@ function copyText(payload: z.infer<typeof taskPayload>, hasTitle: boolean) {
   return [hasTitle ? payload.title : "", payload.body].filter(Boolean).join("\n\n");
 }
 
+function packageAssetIds(payload: z.infer<typeof taskPayload>) {
+  return [...new Set([...payload.assetIds, ...(payload.coverId ? [payload.coverId] : [])])];
+}
+
 export async function getManualDelivery(actor: Actor, id: string) {
   const { task, payload, backendUrl, hasTitle, platformLabel } = await visibleTask(actor, id);
+  const ids = packageAssetIds(payload);
+  const ready = ids.length ? await db().asset.count({ where: { id: { in: ids }, status: "READY" } }) : 0;
   return {
     id: task.id, platformLabel, accountName: task.account.name, backendUrl, title: hasTitle ? payload.title : "", body: payload.body,
     copy: copyText(payload, hasTitle), hasTitle, postUrl: task.postUrl, publishedAt: task.publishedAt?.toISOString() ?? null,
     canConfirm: task.status === "MANUAL" && task.publisherId === actor.id,
+    canDownload: ready === ids.length,
   };
 }
 
@@ -117,7 +124,7 @@ export async function confirmManual(actor: Actor, id: string, confirmed: z.infer
 
 export async function manualPackage(actor: Actor, id: string, signal?: AbortSignal) {
   const { payload, hasTitle } = await visibleTask(actor, id);
-  const ids = [...new Set([...payload.assetIds, ...(payload.coverId ? [payload.coverId] : [])])];
+  const ids = packageAssetIds(payload);
   const assets = await Promise.all(ids.map(async assetId => {
     const asset = await mediaForAsset(assetId);
     return {

@@ -8,7 +8,8 @@ export default async function DraftPage({ params }: { params: Promise<{ id: stri
   const actor = await pageActor("ADMIN", "EDITOR");
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  const [draft, resources] = await Promise.all([findDraft(actor.id, id), draftEditorResources(actor.id)]);
+  const draft = await findDraft(actor.id, id);
   if (!draft) notFound();
+  const resources = await draftEditorResources(actor.id, draft.draft);
   return <DraftComposer key={id} initial={draft} {...resources} />;
 }

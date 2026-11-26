@@ -229,7 +229,7 @@ export const youtube: PlatformAdapter = {
       const body = await video.stream(offset, end);
       if (isFinal) await context.beginSubmission();
       const response = await platformFetch(session, {
-        method: "PUT", duplex: "half", timeoutMs: 120_000, body,
+        method: "PUT", redirect: "manual", duplex: "half", timeoutMs: 120_000, body,
         headers: {
           ...bearer(context.credentials.accessToken), "Content-Type": video.mime,
           "Content-Length": String(end - offset + 1), "Content-Range": `bytes ${offset}-${end}/${video.bytes}`,
@@ -256,7 +256,7 @@ export const youtube: PlatformAdapter = {
     if (!session) return { kind: "unknown" };
     const size = videoOf(context).bytes;
     const response = await platformFetch(session, {
-      method: "PUT",
+      method: "PUT", redirect: "manual",
       headers: { ...bearer(context.credentials.accessToken), "Content-Length": "0", "Content-Range": `bytes */${size}` },
     }, [308, 404, 410]);
     if (response.status === 404 || response.status === 410) return { kind: "unknown" };

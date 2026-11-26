@@ -1,10 +1,11 @@
 import { isDeepStrictEqual } from "node:util";
 import type { z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
+import { audit } from "@/server/audit";
 import { db } from "@/server/db";
 import { liveAvailability } from "@/platforms/registry";
 import { AppError } from "@/server/errors";
-import { draftAssetReferences, draftSchema, emptyDraft, type DraftUpdate, type presetInputSchema } from "@/lib/draft-schema";
+import { draftAssetReferences, draftSchema, emptyDraft, type Draft, type DraftUpdate, type presetInputSchema } from "@/lib/draft-schema";
 import { isPlatform, platformKeys, type PlatformKey } from "@/lib/platforms";
 
 const draftFields = {
@@ -13,17 +14,29 @@ const draftFields = {
 } as const;
 const editable = ["DRAFT", "RETURNED"] as const;
 
-export async function listDrafts(ownerId: string) {
+const pageSize = 24;
+
+export function draftPageNumber(raw?: string | null) {
+  const page = Number(raw);
+  return Number.isSafeInteger(page) && page > 0 ? Math.min(page, 10_000) : 1;
+}
+
+export async function listDrafts(ownerId: string, page: number) {
   const rows = await db().content.findMany({
     where: { ownerId, status: { in: [...editable] } },
-    orderBy: { updatedAt: "desc" },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     select: { id: true, status: true, updatedAt: true, versions: true },
+    skip: (page - 1) * pageSize,
+    take: pageSize + 1,
   });
-  return rows.map(({ versions, updatedAt, ...row }) => ({
-    ...row,
-    title: draftSchema.shape.versions.safeParse(versions).data?.ZH.title.trim() || "未命名草稿",
-    updatedAt: updatedAt.toISOString(),
-  }));
+  return {
+    drafts: rows.slice(0, pageSize).map(({ versions, updatedAt, ...row }) => ({
+      ...row,
+      title: draftSchema.shape.versions.safeParse(versions).data?.ZH.title.trim() || "未命名草稿",
+      updatedAt: updatedAt.toISOString(),
+    })),
+    hasMore: rows.length > pageSize,
+  };
 }
 
 export async function createDraft(ownerId: string) {
@@ -36,6 +49,23 @@ export async function findDraft(ownerId: string, id: string) {
   if (!row) return null;
   const { versions, overrides, selections, updatedAt, ...rest } = row;
   return { ...rest, updatedAt: updatedAt.toISOString(), draft: draftSchema.parse({ versions, overrides, selections }) };
+}
+
+export async function deleteDraft(ownerId: string, id: string, revision: number) {
+  await db().$transaction(async tx => {
+    const removed = await tx.content.updateMany({
+      where: { id, ownerId, revision, status: { in: [...editable] } },
+      data: { status: "DISCARDED" },
+    });
+    if (!removed.count) {
+      const current = await tx.content.findFirst({ where: { id, ownerId }, select: { status: true } });
+      if (!current) throw new AppError("草稿不存在。", 404);
+      if (current.status === "DISCARDED") return;
+      throw new AppError("草稿已更新或提交，请刷新页面。", 409);
+    }
+    await tx.contentAsset.deleteMany({ where: { contentId: id } });
+    await audit(tx, ownerId, "draft.delete", id);
+  });
 }
 
 export async function saveDraft(ownerId: string, id: string, { draft, revision }: DraftUpdate) {
@@ -83,18 +113,39 @@ export async function saveDraft(ownerId: string, id: string, { draft, revision }
   });
 }
 
-export async function draftEditorResources(ownerId: string) {
+const editorAssetSelect = {
+  id: true, filename: true, kind: true, thumbKey: true, mime: true, bytes: true,
+  width: true, height: true, duration: true, status: true,
+} satisfies Prisma.AssetSelect;
+
+function editorAsset({ thumbKey, bytes, ...asset }: Prisma.AssetGetPayload<{ select: typeof editorAssetSelect }>) {
+  return { ...asset, bytes: Number(bytes), hasThumbnail: Boolean(thumbKey) };
+}
+
+export type EditorAsset = ReturnType<typeof editorAsset>;
+
+export async function listEditorAssets(page: number, query: string, imageOnly: boolean) {
+  const name = query.trim().slice(0, 100);
+  const rows = await db().asset.findMany({
+    where: { status: "READY", ...(imageOnly ? { kind: "IMAGE" } : {}),
+      ...(name ? { filename: { contains: name, mode: "insensitive" } } : {}) },
+    select: editorAssetSelect,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    skip: (page - 1) * pageSize,
+    take: pageSize + 1,
+  });
+  return { assets: rows.slice(0, pageSize).map(editorAsset), hasMore: rows.length > pageSize };
+}
+
+export async function draftEditorResources(ownerId: string, draft: Draft) {
+  const { assetIds } = draftAssetReferences(draft);
   const [accounts, assets, presets, preference] = await Promise.all([
     db().platformAccount.findMany({
       where: { platform: { in: [...platformKeys] } },
       select: { id: true, name: true, platform: true, status: true, mode: true, language: true, expiresAt: true },
       orderBy: [{ platform: "asc" }, { name: "asc" }],
     }),
-    db().asset.findMany({
-      where: { status: "READY" },
-      select: { id: true, filename: true, kind: true, thumbKey: true, mime: true, bytes: true, width: true, height: true, duration: true, status: true },
-      orderBy: { createdAt: "desc" },
-    }),
+    assetIds.length ? db().asset.findMany({ where: { status: "READY", id: { in: assetIds } }, select: editorAssetSelect }) : [],
     listPresets(ownerId),
     db().preference.findUnique({ where: { id: "workspace" }, select: { reviewRequired: true } }),
   ]);
@@ -107,7 +158,7 @@ export async function draftEditorResources(ownerId: string) {
         availabilityReason: capability.available ? null : capability.reason ?? "平台能力不可用。",
       };
     }),
-    assets: assets.map(({ thumbKey, bytes, ...asset }) => ({ ...asset, bytes: Number(bytes), hasThumbnail: Boolean(thumbKey) })),
+    assets: assets.map(editorAsset),
     presets,
     reviewRequired: preference?.reviewRequired ?? false,
   };

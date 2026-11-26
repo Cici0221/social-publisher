@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { isPlatform, languageLabels, platformRules } from "@/lib/platforms";
 import type { TaskStatus } from "@/generated/prisma/enums";
 import { formatPublishTime, localPublishTimeToDate, publishTimeInput, publishZones, type PublishZone } from "@/lib/publish-time";
 import { PublishZonePicker, usePublishZone } from "@/ui/publish-zone-picker";
 import { ManualDelivery } from "@/ui/manual-delivery";
-import type { publicationProgress } from "@/server/publications";
+import type { publicationProgress, reconcileTask } from "@/server/publications";
 
 type Progress = Awaited<ReturnType<typeof publicationProgress>>;
+type Reconciliation = Awaited<ReturnType<typeof reconcileTask>>;
 export type DeliveryRow = Progress["tasks"][number];
 
 export const deliveryLabel: Record<TaskStatus, string> = {
@@ -49,9 +50,9 @@ function ScheduleActions({ row, zone, refresh }: { row: DeliveryRow; zone: Publi
   }
   return <div className="delivery-options">
     {!action ? <>
-      <button type="button" className="button button-outline button-compact" onClick={() => {
+      {row.publisherActive && <button type="button" className="button button-outline button-compact" onClick={() => {
         setEditZone(zone); setAction("reschedule"); setValue(publishTimeInput(new Date(row.runAt), zone));
-      }}>修改定时</button>
+      }}>修改定时</button>}
       <button type="button" className="button button-outline button-compact" onClick={() => setAction("cancel")}>取消任务</button>
     </> : <>
       {action === "reschedule" && <label className="form-field"><span>新时间（{publishZones[editZone]}）</span>
@@ -61,6 +62,64 @@ function ScheduleActions({ row, zone, refresh }: { row: DeliveryRow; zone: Publi
         onClick={() => void modify()}>{action === "cancel" ? "确认取消" : "保存定时"}</button>
     </>}
     {note && <p className="delivery-errors" role="alert">{note}</p>}
+  </div>;
+}
+
+type ReconcileDecision = "published" | "published_with_reference" | "not_published";
+
+function ReconcileActions({ row, canUseReference, onConfirmed }: {
+  row: DeliveryRow; canUseReference: boolean; onConfirmed: (resolution: Reconciliation) => void;
+}) {
+  const [decision, setDecision] = useState<ReconcileDecision | null>(null);
+  const [postUrl, setPostUrl] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function choose(value: ReconcileDecision | null) {
+    setDecision(value);
+    setError("");
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!decision || saving) return;
+    const form = new FormData(event.currentTarget);
+    const payload = decision === "published" ? { decision, postUrl } : decision === "published_with_reference"
+      ? { decision, reference: form.get("reference"), evidenceUrl: postUrl.trim() || undefined } : { decision };
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/publications/tasks/${row.id}/reconcile`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error((await response.json()).error ?? "未能保存核对结果。");
+      onConfirmed(await response.json() as Reconciliation);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "未能保存核对结果。");
+    } finally { setSaving(false); }
+  }
+
+  return <div>
+    <p className="muted">{row.mode === "MOCK" ? "请先核对模拟任务的结果。" : "请先在官方后台核对这条内容。"}</p>
+    {!decision ? <div className="delivery-options">
+      {row.mode === "LIVE" && <button type="button" className="button button-outline button-compact"
+        onClick={() => choose("published")}>已发布</button>}
+      <button type="button" className="button button-outline button-compact" onClick={() => choose("not_published")}>未发布</button>
+    </div> : <form className="delivery-options" onSubmit={save}>
+      {decision === "not_published" ? <p className="muted">确认后任务会标为失败。发布人仍启用时，可以手动重试。</p> :
+        <label className="form-field"><span>{decision === "published" ? "官方帖子链接" : "官方链接（可选，仅作审计凭证）"}</span>
+          <input type="url" name="postUrl" value={postUrl} onChange={event => setPostUrl(event.target.value)}
+            maxLength={4096} required={decision === "published"} /></label>}
+      {decision === "published" && canUseReference && <button type="button" className="button button-outline button-compact"
+        disabled={saving} onClick={() => choose("published_with_reference")}>用官方后台凭证核对</button>}
+      {decision === "published_with_reference" && <label className="form-field"><span>官方后台的帖子编号或核对依据</span>
+        <textarea name="reference" minLength={2} maxLength={300} required /></label>}
+      <button type="button" className="button button-outline button-compact" disabled={saving}
+        onClick={() => choose(decision === "published_with_reference" ? "published" : null)}>返回</button>
+      <button type="submit" className="button button-primary button-compact" disabled={saving}>
+        {decision === "not_published" ? "确认未发布" : "确认已发布"}</button>
+    </form>}
+    {error && <p className="delivery-errors" role="alert">{error}</p>}
   </div>;
 }
 
@@ -105,12 +164,19 @@ export function PublishProgress({ initial }: { initial: Progress }) {
     } finally { setWorking(""); }
   }
 
+  function confirmResolution(id: string, resolution: Reconciliation) {
+    refreshSequence.current += 1;
+    setProgress(previous => ({ ...previous, tasks: previous.tasks.map(row => row.id === id ? { ...row, ...resolution } : row) }));
+    void refresh();
+  }
+
   return <>
     <div className="delivery-options"><PublishZonePicker zone={zone} setZone={setZone} /></div>
     {progress.status === "RETURNED" && <div className="delivery-errors">
       <p>审核已退回{progress.reviewNote ? ` · ${progress.reviewNote}` : ""}</p>
-      {progress.canManage && <Link className="text-link" href={`/contents/${progress.id}`}>继续编辑</Link>}
+      {progress.canEditDraft && <Link className="text-link" href={`/contents/${progress.id}`}>继续编辑</Link>}
     </div>}
+    {progress.status === "DISCARDED" && <p className="delivery-notes">原草稿已删除。</p>}
     <p className="delivery-summary" aria-live="polite"><strong>{progress.tasks.filter(row => row.status === "SUCCESS").length} / {progress.tasks.length}</strong> 个任务成功</p>
     <div className="delivery-stack">
       {progress.tasks.map(row => {
@@ -125,14 +191,16 @@ export function PublishProgress({ initial }: { initial: Progress }) {
           </header>
           <p className="muted">{row.publishedAt ? `完成于 ${formatPublishTime(new Date(row.publishedAt), zone)}` :
             `计划 ${formatPublishTime(new Date(row.runAt), zone)}`}（{publishZones[zone]}）</p>
-          {progress.canManage && ["SCHEDULED", "WAITING_APPROVAL", "QUEUED"].includes(row.status) &&
+          {progress.canManageTasks && ["SCHEDULED", "WAITING_APPROVAL", "QUEUED"].includes(row.status) &&
             <ScheduleActions row={row} zone={zone} refresh={refresh} />}
           {row.errorMessage && <p className={row.status === "SUCCESS" ? "delivery-notes" : "delivery-errors"}>{row.errorMessage}</p>}
           {!link && row.mode === "LIVE" && row.externalId &&
             <p className="muted delivery-reference">平台回执编号 <code>{row.externalId}</code></p>}
           {link && <a className="button button-outline button-compact" href={link} target="_blank" rel="noreferrer">查看已发布帖子</a>}
           {row.status === "MANUAL" && <ManualDelivery taskId={row.id} />}
-          {progress.canManage && row.status === "FAILED" && <button type="button" className="button button-outline button-compact" onClick={() => void retry(row.id)}
+          {progress.canManageTasks && row.status === "UNKNOWN" && <ReconcileActions row={row} canUseReference={progress.canReconcileWithReference}
+            onConfirmed={resolution => confirmResolution(row.id, resolution)} />}
+          {progress.canManageTasks && row.publisherActive && row.status === "FAILED" && <button type="button" className="button button-outline button-compact" onClick={() => void retry(row.id)}
             disabled={working === row.id}>重试此账号</button>}
         </article>;
       })}

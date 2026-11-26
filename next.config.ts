@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
+import { PHASE_PRODUCTION_SERVER } from "next/constants";
 import { fileURLToPath } from "node:url";
+import { validateRuntimeConfig } from "./src/server/runtime-config";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 
@@ -20,4 +22,7 @@ const config: NextConfig = {
   },
 };
 
-export default config;
+export default function nextConfig(phase: string) {
+  if (phase === PHASE_PRODUCTION_SERVER) validateRuntimeConfig();
+  return config;
+}

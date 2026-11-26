@@ -53,11 +53,11 @@ export function ReviewSettingsForm({ required, reviewerCount, pendingCount }: {
         <span>有效审核人 <strong>{reviewerCount}</strong></span>
         <span>待审核内容 <strong>{pendingCount}</strong></span>
       </div>
-      {enabled && reviewerCount === 0 && <p className={styles.error} role="status">当前没有审核人。开启后，内容将等待有审核权限的成员处理。</p>}
+      {enabled && reviewerCount === 0 && <p className={styles.error} role="status">请先在成员管理添加或启用至少一位审核人。</p>}
       {error && <p className={styles.error} role="alert">{error}</p>}
       <div className={styles.actions}>
         <p role="status">{message}</p>
-        <button className="button button-primary" disabled={saving || enabled === confirmed}>
+        <button className="button button-primary" disabled={saving || enabled === confirmed || (enabled && reviewerCount === 0)}>
           <Check size={17} aria-hidden="true" />{saving ? "正在保存…" : "保存设置"}</button>
       </div>
     </div>

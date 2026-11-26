@@ -5,6 +5,7 @@ import type { Actor } from "../auth";
 import { audit } from "../audit";
 import { db, type Transaction } from "../db";
 import { AppError } from "../errors";
+import { errorDetails, logError } from "../logging";
 import {
   assertCompleteParts, checkedUpload, expectedPartBytes, UPLOAD_LIFETIME_MS,
   UPLOAD_PART_BYTES, urlSafeFilename, verifiedParts,
@@ -120,7 +121,7 @@ async function lockAsset(tx: Transaction, id: string) {
   // Draft writes take the same row locks before updating ContentAsset.
   await tx.$queryRaw`SELECT "id" FROM "Asset" WHERE "id" = ${id} FOR UPDATE`;
   const asset = await tx.asset.findUnique({ where: { id } });
-  if (!asset || asset.status === "DELETED") throw new AppError("素材不存在。", 404);
+  if (!asset) throw new AppError("素材不存在。", 404);
   return asset;
 }
 
@@ -131,6 +132,7 @@ export async function editAsset(actor: Actor, id: string, input: unknown) {
   if (tags.some(tag => /[\u0000-\u001f\u007f]/u.test(tag))) throw new AppError("标签含有无效字符。");
   const row = await db().$transaction(async tx => {
     const asset = await lockAsset(tx, validId(id));
+    if (asset.status === "DELETED") throw new AppError("素材不存在。", 404);
     if (!canEditAsset(actor, asset.uploaderId)) throw new AppError("仅上传者或管理员可以整理该素材。", 403);
     if (parsed.data.folderId && !await tx.assetFolder.findUnique({ where: { id: parsed.data.folderId } })) {
       throw new AppError("该文件夹已不存在。", 404);
@@ -157,11 +159,15 @@ function versionLabel(versions: Prisma.JsonValue) {
 async function referenceList(client: Transaction, id: string, actor: Actor) {
   const references = await client.contentAsset.findMany({
     where: { assetId: id }, orderBy: { contentId: "asc" },
-    select: { content: { select: { id: true, ownerId: true, status: true, versions: true } } },
+    select: { content: { select: {
+      id: true, ownerId: true, status: true, versions: true,
+      _count: { select: { tasks: { where: { status: { notIn: ["SUCCESS", "CANCELLED"] } } } } },
+    } } },
   });
   return references.map(({ content }) => ({
     id: content.id, title: versionLabel(content.versions), status: content.status,
-    canOpen: actor.role === "ADMIN" || content.ownerId === actor.id,
+    canOpen: content.ownerId === actor.id || (actor.role === "ADMIN" && (content.status === "IN_REVIEW" || content.status === "SUBMITTED")),
+    blocksDelete: content.status !== "SUBMITTED" || content._count.tasks > 0,
   }));
 }
 export type AssetReference = Awaited<ReturnType<typeof referenceList>>[number];
@@ -173,14 +179,17 @@ export async function assetReferences(actor: Actor, id: string) {
   return referenceList(db(), id, actor);
 }
 
-export async function removeAsset(actor: Actor, id: string) {
+export async function removeAsset(actor: Actor, id: string, archivePublished = false) {
   return db().$transaction(async tx => {
     const asset = await lockAsset(tx, validId(id));
     if (!canEditAsset(actor, asset.uploaderId)) throw new AppError("仅上传者或管理员可以删除该素材。", 403);
+    if (asset.status === "DELETED") return { deleted: true as const, references: [] };
     const references = await referenceList(tx, id, actor);
-    if (references.length) return { deleted: false as const, references };
+    if (references.some(reference => reference.blocksDelete) || (references.length && !archivePublished)) {
+      return { deleted: false as const, references };
+    }
     await tx.asset.update({ where: { id }, data: { status: "DELETED", error: cleanupPending } });
-    await audit(tx, actor.id, "asset.delete", id);
+    await audit(tx, actor.id, "asset.delete", id, { preservedReferences: references.length });
     return { deleted: true as const, references: [] };
   });
 }
@@ -360,7 +369,10 @@ export async function runAssetMaintenance() {
     const removals = await Promise.allSettled([
       deleteObject(row.objectKey), deleteObject(`thumbnails/${row.id}.jpg`),
     ]);
-    if (removals.every(item => item.status === "fulfilled")) {
+    const failure = removals.find(item => item.status === "rejected");
+    if (failure) {
+      logError("asset.cleanup_failed", { assetId: row.id, error: errorDetails(failure.reason) });
+    } else {
       await db().asset.updateMany({ where: { id: row.id, status: "DELETED" }, data: { error: null, thumbKey: null } });
     }
   }
